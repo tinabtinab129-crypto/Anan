@@ -1,0 +1,4838 @@
+-- ============================================================
+-- AB HUB | FARM
+-- ============================================================
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local HttpService = game:GetService("HttpService")
+local Stats = game:GetService("Stats")
+local PathfindingService = game:GetService("PathfindingService")
+local CollectionService = game:GetService("CollectionService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local TeleportService = game:GetService("TeleportService")
+
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+if not game:IsLoaded() then
+    pcall(function() game.Loaded:Wait() end)
+end
+
+-- Global flags
+_G.playPressed = _G.playPressed or false
+_G.skipPressed = _G.skipPressed or false
+BypassReady = false
+IsDownedPaused = false
+JanitorState = "INIT"
+SteakState = "INIT"
+ATM_STATE = "IDLE"
+
+-- Auto Minigame Global (Auto-Win แบบ Farm)
+_G.AutoMinigameEnabled = true
+
+_G.SendNotify = _G.SendNotify or function(title, content, icon)
+    if _G.WindUI and _G.WindUI.Notify then
+        _G.WindUI:Notify({
+            Title = title or "Notification",
+            Content = content or "",
+            Duration = 2,
+            Icon = icon or "zap"
+        })
+    end
+end
+
+print("[AB] Step 1: Modules loaded")
+
+-- ============================================================
+-- Play / Skip button auto press
+-- ============================================================
+local function HookButton(btn, highlightPlay, isPlay)
+    if not btn then return end
+    if typeof(getconnections) ~= "function" then return end
+    if highlightPlay then
+        local highlight = Instance.new("UIStroke")
+        highlight.Color = Color3.fromRGB(0, 200, 0)
+        highlight.Thickness = 3
+        highlight.Parent = btn
+        task.delay(0.5, function()
+            if highlight and highlight.Parent then highlight:Destroy() end
+        end)
+    end
+    for _, eventName in ipairs({"Activated","MouseButton1Click"}) do
+        local event = btn[eventName]
+        if event then
+            local ok, conns = pcall(getconnections, event)
+            if ok and conns then
+                for _, conn in ipairs(conns) do
+                    if conn.Function then
+                        pcall(conn.Function)
+                    end
+                end
+            end
+        end
+    end
+    if isPlay then
+        _G.playPressed = true
+    else
+        _G.skipPressed = true
+    end
+end
+
+local function PressPlayThenSkip()
+    if LocalPlayer.Character then return end
+    task.wait(1)
+    local splash = LocalPlayer.PlayerGui:FindFirstChild("SplashScreenGui")
+    if splash and not _G.playPressed then
+        local frame = splash:FindFirstChild("Frame")
+        local playButton = frame and frame:FindFirstChild("PlayButton")
+        if playButton then
+            HookButton(playButton, true, true)
+        end
+    end
+    task.wait(2)
+    local creator = LocalPlayer.PlayerGui:FindFirstChild("CharacterCreator")
+    if creator and not _G.skipPressed then
+        local menuFrame = creator:FindFirstChild("MenuFrame")
+        local skipButton = menuFrame and menuFrame:FindFirstChild("AvatarMenuSkipButton")
+        if skipButton then
+            HookButton(skipButton, false, false)
+        end
+    end
+end
+
+pcall(PressPlayThenSkip)
+
+if not LocalPlayer.Character then
+    LocalPlayer.CharacterAdded:Wait()
+end
+
+print("[AB] Step 2: Play/Skip done")
+
+local function waitCharacterCreatorFinished()
+    while true do
+        local creator = PlayerGui:FindFirstChild("CharacterCreator")
+        if not creator or creator.Enabled == false then break end
+        task.wait(1)
+    end
+    local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    repeat task.wait()
+    until character
+        and character.Parent
+        and character:FindFirstChild("Humanoid")
+        and character:FindFirstChild("HumanoidRootPart")
+    repeat task.wait()
+    until LocalPlayer.Character == character
+    task.wait(3)
+end
+
+pcall(waitCharacterCreatorFinished)
+print("[AB] Step 3: Character ready")
+
+-- ============================================================
+-- Load WindUI
+-- ============================================================
+local WindUI
+local ok, err = pcall(function()
+    WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
+end)
+if not ok or not WindUI then
+    warn("[AB HUB] Failed to load WindUI:", err)
+    return
+end
+_G.WindUI = WindUI
+print("[AB] Step 4: WindUI loaded")
+
+local Window = WindUI:CreateWindow({
+    Title = "AB HUB | FARM",
+    Icon = "rbxassetid://91403725911047",
+    Author = "DC .gg/Cphtz7kuNy",
+    Folder = "ABHUB",
+    Size = UDim2.fromOffset(580, 460),
+    MinSize = Vector2.new(560, 350),
+    MaxSize = Vector2.new(850, 560),
+    Transparent = true,
+    Resizable = true,
+    SideBarWidth = 200,
+    BackgroundImageTransparency = 0.42,
+    HideSearchBar = false,
+    ScrollBarEnabled = false,
+    User = {
+        Enabled = false,
+        Anonymous = true,
+        Callback = function() end
+    }
+})
+
+print("[AB] Step 5: Window created")
+
+Window:EditOpenButton({
+    Title = "AB HUB | FARM",
+    Icon = "rbxassetid://91403725911047",
+    CornerRadius = UDim.new(0,16),
+    StrokeThickness = 2,
+    Color = ColorSequence.new( 
+        Color3.fromHex("66FF33"), 
+        Color3.fromHex("00AA00")
+    ),
+    OnlyMobile = true,
+    Enabled = true,
+    Draggable = true,
+})
+
+Window:Tag({
+    Title = "v0.3",
+    Icon = "github",
+    Color = Color3.fromHex("#66FF33"),
+    Radius = 8
+})
+
+Window:Tag({
+    Title = "AB HUB",
+    Color = Color3.fromHex("#00CC00"),
+    Radius = 8
+})
+
+pcall(function()
+    WindUI:AddTheme({
+        Name = "ABHUB_Green",
+        Accent = Color3.fromHex("00CC00"),
+        Dialog = Color3.fromHex("0F1F0F"),
+        Outline = Color3.fromHex("1F3F1F"),
+        Text = Color3.fromHex("CCFFCC"),
+        Placeholder = Color3.fromHex("66AA66"),
+        Background = Color3.fromHex("0A1A0A"),
+        Button = Color3.fromHex("1A3A1A"),
+        ButtonHover = Color3.fromHex("2A5A2A"),
+        ButtonOutline = Color3.fromHex("33FF33"),
+        Toggle = Color3.fromHex("00AA00"),
+        ToggleUntoggled = Color3.fromHex("1A3A1A"),
+        Slider = Color3.fromHex("00CC00"),
+        Dropdown = Color3.fromHex("1A3A1A"),
+        DropdownOption = Color3.fromHex("0A1A0A"),
+        Tooltip = Color3.fromHex("0A1A0A"),
+        Notification = Color3.fromHex("0A1A0A"),
+    })
+    WindUI:SetTheme("ABHUB_Green")
+    print("[AB] Green theme applied")
+end)
+
+local Default = Window:Tab({ Title = "Auto Farm", Icon = "star" })
+local EspTab  = Window:Tab({ Title = "Esp",       Icon = "view" })
+local MiscTab = Window:Tab({ Title = "Misc",      Icon = "settings-2" })
+local ServerTab = Window:Tab({ Title = "Server",  Icon = "server" })
+local ConfigTab = Window:Tab({ Title = "Config",  Icon = "settings" })
+
+print("[AB] Step 6: Tabs created")
+
+-- ============================================================
+-- Setup core references
+-- ============================================================
+local Client = LocalPlayer
+local Char, Humanoid, Root
+
+local function UpdateCharacter()
+    Char = Client.Character or Client.CharacterAdded:Wait()
+    Humanoid = Char:WaitForChild("Humanoid")
+    Root = Char:WaitForChild("HumanoidRootPart")
+end
+UpdateCharacter()
+
+local Net = require(ReplicatedStorage.Modules.Core.Net)
+local CoreNet = require(ReplicatedStorage.Modules.Core.Net)
+local CoreData = require(ReplicatedStorage.Modules.Core.Data)
+local ModuleATM = require(ReplicatedStorage.Modules.Game.ATM.ATM)
+
+print("[AB] Step 7: Core modules loaded")
+
+local Flags = {
+    AutoJanitor = false,
+    AutoQuick11 = false,
+    AutoSteak = false,
+    AutoDeposit = false,
+    AutoATM = false,
+    MeleeAura = false,
+}
+
+_G.MeleeAura = false
+_G.MeleeAuraRange = 15
+local _meleeAuraThread = nil
+local _lastHackTime = tick()
+
+local Settings = {
+    DepositThreshold = 100,
+}
+
+local function WaitForMap(timeout)
+    timeout = timeout or 60
+    local start = tick()
+    while tick() - start < timeout do
+        local map = workspace:FindFirstChild("Map")
+        if map
+            and map:FindFirstChild("Tiles")
+            and map:FindFirstChild("Props")
+        then
+            return map
+        end
+        task.wait(1)
+    end
+    return nil
+end
+
+-- ============================================================
+-- ModuleService
+-- ============================================================
+local ModuleService = {}
+ModuleService.__index = ModuleService
+
+function ModuleService.new()
+    return setmetatable({
+        [1] = {
+            Hookfunction = hookfunction,
+            Clonefunction = clonefunction,
+            FireProximityPrompt = fireproximityprompt or function(prompt)
+                local vim = game:GetService("VirtualInputManager")
+                vim:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+                task.wait(0.1)
+                vim:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+            end,
+            Islclosure = islclosure,
+        },
+        [2] = {}
+    }, ModuleService)
+end
+
+local function AddModifierToDoor(v)
+    for _, v1 in v:GetDescendants() do
+        if not v1:IsA("BasePart") or v1:FindFirstChild("Modifier") then continue end
+        local m = Instance.new("PathfindingModifier", v1)
+        m.Name = "Modifier" m.PassThrough = true m.Label = "Noclip"
+    end
+end
+pcall(function()
+    for _, Tags in CollectionService:GetAllTags() do
+        if not Tags:find("Door") then continue end
+        for _, v in CollectionService:GetTagged(Tags) do
+            AddModifierToDoor(v)
+        end
+        CollectionService:GetInstanceAddedSignal(Tags):Connect(function(v)
+            AddModifierToDoor(v)
+        end)
+    end
+end)
+
+local BLOCK_NAMES = { "Dumpster", "Generator", "Chair_SIGTRYGG" }
+
+local function AddBlockModifier(v)
+    for _, v1 in v:GetDescendants() do
+        if not v1:IsA("BasePart") or v1:FindFirstChild("Modifier") then continue end
+        local m = Instance.new("PathfindingModifier", v1)
+        m.Name = "Modifier"
+        m.PassThrough = false
+        m.Label = "Blocked"
+    end
+end
+
+task.spawn(function()
+    pcall(function()
+        local map = workspace:WaitForChild("Map", 30)
+        if not map then return end
+
+        local function scanFolder(folder)
+            if not folder then return end
+            for _, v in pairs(folder:GetDescendants()) do
+                for _, name in ipairs(BLOCK_NAMES) do
+                    if v.Name == name and v:IsA("Model") then
+                        AddBlockModifier(v)
+                    end
+                end
+            end
+            folder.DescendantAdded:Connect(function(v)
+                for _, name in ipairs(BLOCK_NAMES) do
+                    if v.Name == name and v:IsA("Model") then
+                        AddBlockModifier(v)
+                    end
+                end
+            end)
+        end
+
+        local tiles = map:WaitForChild("Tiles", 30)
+        local props = map:WaitForChild("Props", 30)
+        local newProps = map:WaitForChild("NewProps", 30)
+
+        scanFolder(tiles)
+        scanFolder(props)
+        scanFolder(newProps)
+    end)
+end)
+
+local function GetPosition(obj)
+    if not obj then return nil end
+    if obj:IsA("BasePart") then return obj.Position end
+    local ok, result = pcall(function() return obj:GetPivot().Position end)
+    if ok and result then return result end
+    if obj:IsA("Model") and obj.PrimaryPart then return obj.PrimaryPart.Position end
+    return nil
+end
+
+local function SafeFirePrompt(obj)
+    if not obj then return end
+    local prompt = obj:FindFirstChildWhichIsA("ProximityPrompt")
+        or obj:FindFirstChild("ProximityPrompt")
+    if not prompt then return end
+
+    if fireproximityprompt then
+        pcall(function() fireproximityprompt(prompt) end)
+    else
+        local vim = game:GetService("VirtualInputManager")
+        vim:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+        task.wait(0.1)
+        vim:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+    end
+end
+
+function ModuleService:Error(Class)
+    if not Class then return true end
+    for _, v in pairs(ModuleATM.class.objects) do
+        if v.instance == Class then return v.states.disabled:get() end
+    end
+    return nil
+end
+
+function ModuleService:Thread() end
+
+function ModuleService:Bypass()
+    local ok, err = pcall(function()
+        local Security
+        if debug and debug.getupvalue then
+            local s = debug.getupvalue(CoreNet.send, 2)
+            if s and pcall(function()
+                return debug.getinfo(s).what == "Lua"
+            end) then
+                Security = s
+            end
+        end
+        if not Security and getgc then
+            for _, v in pairs(getgc(true)) do
+                if type(v) == "function" then
+                    local ok2, info = pcall(debug.getinfo, v)
+                    if ok2 and info and info.what == "Lua" then
+                        Security = v
+                        break
+                    end
+                end
+            end
+        end
+        if not Security then error("Bypass Failed.") end
+        self[1].Hookfunction(Security, function(f, ...) return f(...) end)
+    end)
+    if not ok then
+        warn("[Bypass] error:", err)
+        return
+    end
+
+    local Core = {
+        Send = self[1].Clonefunction(CoreNet.send),
+        Get = self[1].Clonefunction(CoreNet.get),
+    }
+    self[2].Send = function(...)
+        if type(select(1,...)) ~= "string" then return end
+        return Core.Send(...)
+    end
+    self[2].Get = function(...)
+        if type(select(1,...)) ~= "string" then return end
+        return Core.Get(...)
+    end
+end
+
+function ModuleService:Closest(Folder, Condition, Pivot)
+    if not Folder then return nil end
+    Condition = Condition or function() return true end
+    local best, bestDist = nil, math.huge
+    for _, v in pairs(Folder:GetChildren()) do
+        if not Condition(v) then continue end
+        local pos = GetPosition(v)
+        if not pos then continue end
+        local origin = Pivot or Root.Position
+        local d = (origin - pos).Magnitude
+        if d < bestDist then best = v bestDist = d end
+    end
+    return best
+end
+
+function ModuleService:Detected()
+    local n = Client.PlayerGui:FindFirstChild("Notifications")
+    if not n then return nil end
+    for _, v in pairs(n.Frame:GetChildren()) do
+        if v.Name == "Notification" then
+            if v.Text == "Teleport detected" then return true end
+            if v.Text == "Hee" then return true end
+        end
+    end
+end
+
+function ModuleService:Dist(Target)
+    return (Root.Position - Target).Magnitude
+end
+
+function ModuleService:IsAlive()
+    return Char and Char.Parent and Humanoid and Humanoid.Health > 0
+end
+
+local IsTeleporting = false
+local TeleportStartTime = 0
+
+Client.CharacterAdded:Connect(function(newChar)
+    Char = newChar
+    Humanoid = newChar:WaitForChild("Humanoid")
+    Root = newChar:WaitForChild("HumanoidRootPart")
+    IsTeleporting = false
+    JanitorState = "INIT"
+    SteakState = "INIT"
+    task.spawn(function()
+        task.wait(1)
+        pcall(InitSafeHeight)
+    end)
+end)
+
+local function AnyFlagOn()
+    return Flags.AutoJanitor or Flags.AutoQuick11 or Flags.AutoSteak or Flags.AutoATM
+end
+
+local BASE_SPEED = 40
+
+local PATH_CONFIGS = {
+    { radius = 2.5, spacing = nil },
+    { radius = 2, spacing = nil },
+    { radius = 1.5, spacing = nil },
+}
+
+local function CreateAgentPath(radius, waypointSpacing)
+    local ok, p = pcall(function()
+        return PathfindingService:CreatePath({
+            AgentCanJump = true,
+            AgentHeight = 4,
+            AgentRadius = radius or 2,
+            AgentMaxSlope = 100,
+            WaypointSpacing = 4,
+            AgentJumpRadius = 60,
+            AgentJumpHeight = 70,
+            Costs = { DoorArea = 1; BlockedNode = 50 }
+        })
+    end)
+    return ok and p or nil
+end
+
+local function GetPathLength(waypoints)
+    local total = 0
+    for i = 2, #waypoints do
+        total = total + (waypoints[i].Position - waypoints[i-1].Position).Magnitude
+    end
+    return total
+end
+
+function ModuleService:Teleport(Destination, waypointSpacing)
+    if IsTeleporting and (tick() - TeleportStartTime) < 15 then return end
+    IsTeleporting = true
+    TeleportStartTime = tick()
+    self._cancelTeleport = false
+
+    local OK, Err = pcall(function()
+        local targetPos
+        if typeof(Destination) == "Vector3" then
+            targetPos = Destination
+        elseif type(Destination) == "table" then
+            local v = Destination.CFrame
+            targetPos = typeof(v) == "CFrame" and v.Position or v
+        end
+        if not targetPos then return end
+
+        local function TryCompute(pos, path)
+            local ok = pcall(function() path:ComputeAsync(Root.Position, pos) end)
+            return ok and path.Status == Enum.PathStatus.Success
+        end
+
+        local function FindBestPath()
+            local bestPath, bestConfig, bestLength = nil, nil, math.huge
+
+            for _, cfg in ipairs(PATH_CONFIGS) do
+                local p = CreateAgentPath(cfg.radius, cfg.spacing or waypointSpacing)
+                if not p then continue end
+
+                local computed = TryCompute(targetPos, p)
+                if not computed then
+                    for _, offset in ipairs({
+                        Vector3.new(0, 3, 0),
+                        Vector3.new(0, 6, 0),
+                        Vector3.new(2, 3, 0),
+                        Vector3.new(-2, 3, 0),
+                        Vector3.new(0, 3, 2),
+                        Vector3.new(0, 3, -2),
+                    }) do
+                        if TryCompute(targetPos + offset, p) then computed = true; break end
+                    end
+                end
+
+                if computed then
+                    local wps = p:GetWaypoints()
+                    local len = GetPathLength(wps)
+                    if len < bestLength * 0.95 then
+                        bestPath = p
+                        bestConfig = cfg
+                        bestLength = len
+                    end
+                end
+            end
+
+            return bestPath, bestConfig
+        end
+
+        local Path, UsedConfig = FindBestPath()
+        if not Path then IsTeleporting = false; return end
+
+        local Waypoints = Path:GetWaypoints()
+        local WaypointIndex = 1
+        local NeedRepath = false
+
+        while WaypointIndex <= #Waypoints do
+            if not AnyFlagOn() then break end
+            if not self:IsAlive() then break end
+            if self._cancelTeleport then break end
+
+            if NeedRepath then
+                NeedRepath = false
+                local newPath, newConfig = FindBestPath()
+                if not newPath then break end
+                Path = newPath
+                UsedConfig = newConfig
+                Waypoints = Path:GetWaypoints()
+                WaypointIndex = 1
+            end
+
+            local Waypoint = Waypoints[WaypointIndex]
+            WaypointIndex = WaypointIndex + 1
+
+            if self:Detected() then
+                task.wait(2)
+                NeedRepath = true
+                continue
+            end
+
+            local OffsetY = (Waypoint.Action == Enum.PathWaypointAction.Jump) and 13 or 3
+            local TargetPos = Waypoint.Position + Vector3.new(0, OffsetY, 0)
+            local StartPos = Root.Position
+            local DirVec = TargetPos - StartPos
+            local Distance = DirVec.Magnitude
+            if Distance < 0.1 then continue end
+
+            local NextWP = Waypoints[WaypointIndex]
+            local LookTarget = NextWP and (NextWP.Position + Vector3.new(0, OffsetY, 0)) or TargetPos
+            local LookDir = LookTarget - StartPos
+            local FlatLook = Vector3.new(LookDir.X, 0, LookDir.Z)
+
+            local Dir = DirVec.Unit
+            local FlatDir = FlatLook.Magnitude > 0.5 and FlatLook.Unit or Vector3.new(Dir.X, 0, Dir.Z)
+            local FacingCF = (FlatDir.Magnitude > 0.01)
+                and CFrame.lookAt(Vector3.zero, FlatDir)
+                or CFrame.identity
+
+            local Moved = 0
+            local timeout = tick() + 10
+            local lastTick = tick()
+
+            while Moved < Distance do
+                if not AnyFlagOn() then break end
+                if tick() > timeout then break end
+                if not self:IsAlive() then break end
+                if self._cancelTeleport then break end
+
+                if self:Detected() then
+                    task.wait(2)
+                    NeedRepath = true
+                    break
+                end
+
+                local now = tick()
+                local dt = math.min(now - lastTick, 0.067)
+                lastTick = now
+
+                Moved = math.min(Moved + BASE_SPEED * dt, Distance)
+                local NewPos = StartPos + Dir * Moved
+
+                local CurrentPos = Root.Position
+                local SmoothedPos = CurrentPos:Lerp(NewPos, 0.5)
+
+                local CurrentCF = Root.CFrame
+                local TargetCF = CFrame.new(NewPos) * FacingCF
+                local angleDiff = math.acos(math.clamp(CurrentCF.LookVector:Dot(TargetCF.LookVector), -1, 1))
+                local lerpAlpha = math.clamp(angleDiff * 0.6, 0.08, 0.35)
+                local SmoothedCF = CFrame.new(SmoothedPos) * (CurrentCF:Lerp(TargetCF, lerpAlpha) - CurrentCF.Position)
+
+                if Humanoid.Sit then Humanoid.Sit = false end
+                self[2].Send("set_sprinting_1", true)
+                Root:PivotTo(SmoothedCF)
+
+                RunService.Heartbeat:Wait()
+            end
+        end
+    end)
+
+    IsTeleporting = false
+    return OK
+end
+
+-- ============================================================
+-- Deposit
+-- ============================================================
+local ATM_INTERACT_DIST = 4
+local ATM_STAND_OFFSET = 5
+
+local function GetATMStandPos(atm)
+    local cf = atm:IsA("Model") and atm.PrimaryPart and atm.PrimaryPart.CFrame
+        or (atm:IsA("BasePart") and atm.CFrame)
+    if cf then
+        local frontPos = (cf * CFrame.new(0, 0, ATM_STAND_OFFSET)).Position + Vector3.new(0, 0.5, 0)
+        local backPos = (cf * CFrame.new(0, 0, -ATM_STAND_OFFSET)).Position + Vector3.new(0, 0.5, 0)
+        local distFront = (Root.Position - frontPos).Magnitude
+        local distBack = (Root.Position - backPos).Magnitude
+        local best = distFront < distBack and frontPos or backPos
+        local dir = (best - (atm:IsA("Model") and atm:GetPivot().Position or atm.Position))
+        if dir.Magnitude > 0 then
+            best = best + dir.Unit * 1.5
+        end
+        return best
+    end
+    return atm:IsA("Model") and atm:GetPivot().Position or atm.Position
+end
+
+local function IsATMDisabled(atm)
+    for _, obj in next, ModuleATM.class.objects do
+        if obj.instance == atm then
+            return obj.states.disabled.get() == true
+        end
+    end
+    return true
+end
+
+local function GetBestATM()
+    local best, bestDist = nil, math.huge
+    for _, obj in next, ModuleATM.class.objects do
+        local atm = obj.instance
+        if not atm then continue end
+        if obj.states.disabled.get() == true then continue end
+        local pos = atm:IsA("Model") and atm:GetPivot().Position or atm.Position
+        local d = (Root.Position - pos).Magnitude
+        if d < bestDist then
+            best = atm
+            bestDist = d
+        end
+    end
+    return best, bestDist
+end
+
+local function WithdrawFromATM(self, amount)
+    local ATM = GetBestATM()
+    if not ATM then return false end
+    local standPos = GetATMStandPos(ATM)
+    local dist = (Root.Position - standPos).Magnitude
+    if dist > ATM_INTERACT_DIST then
+        self:Teleport({ CFrame = CFrame.new(standPos) })
+        task.wait(0.5)
+        local newDist = (Root.Position - standPos).Magnitude
+        if newDist > ATM_INTERACT_DIST then return false end
+    end
+    if IsATMDisabled(ATM) then return false end
+    self[2].Get("transfer_funds", "bank", "hand", amount)
+    task.wait(0.3)
+    return true
+end
+
+function ModuleService:DoDeposit(nearPos)
+    if IsDownedPaused then return false end
+    local timeout = 30
+    local recheckRate = 0.5
+    local ATM, atmDist = GetBestATM()
+    if not ATM then return false end
+    local arrived = false
+    local globalStart = tick()
+
+    while not arrived do
+        if IsDownedPaused then return false end
+        if tick() - globalStart > timeout then return false end
+
+        if IsATMDisabled(ATM) then
+            IsTeleporting = false
+            local better, betterDist = GetBestATM()
+            if not better then return false end
+            ATM = better
+            atmDist = betterDist
+            task.wait(recheckRate)
+            continue
+        end
+
+        local better, betterDist = GetBestATM()
+        if better and better ~= ATM then
+            if betterDist < atmDist - 10 or IsATMDisabled(ATM) then
+                IsTeleporting = false
+                ATM = better
+                atmDist = betterDist
+                task.wait(recheckRate)
+                continue
+            end
+        end
+
+        local standPos = GetATMStandPos(ATM)
+        local distToStand = (Root.Position - standPos).Magnitude
+
+        if IsATMDisabled(ATM) then
+            IsTeleporting = false
+            local better2, betterDist2 = GetBestATM()
+            if not better2 then return false end
+            ATM = better2
+            atmDist = betterDist2
+            task.wait(recheckRate)
+            continue
+        end
+
+        if distToStand > ATM_INTERACT_DIST then
+            IsTeleporting = false
+            self._cancelTeleport = false
+
+            local rerouteATM = ATM
+            local newRouteATM = nil
+            local cancelMove = false
+
+            local rerouteThread = task.spawn(function()
+                while not cancelMove do
+                    task.wait(0.3)
+                    if IsATMDisabled(rerouteATM) then
+                        self._cancelTeleport = true
+                        IsTeleporting = false
+                        cancelMove = true
+                        break
+                    end
+                    local newATM, newDist = GetBestATM()
+                    if newATM and newATM ~= rerouteATM then
+                        local curDist = (Root.Position - GetATMStandPos(rerouteATM)).Magnitude
+                        if newDist < curDist - 10 then
+                            newRouteATM = newATM
+                            self._cancelTeleport = true
+                            IsTeleporting = false
+                            cancelMove = true
+                            break
+                        end
+                    end
+                end
+            end)
+
+            self:Teleport({ CFrame = CFrame.new(standPos) })
+            cancelMove = true
+            self._cancelTeleport = false
+            task.cancel(rerouteThread)
+
+            if newRouteATM then
+                ATM = newRouteATM
+                atmDist = (Root.Position - GetATMStandPos(ATM)).Magnitude
+            end
+
+            task.wait(recheckRate)
+        else
+            arrived = true
+        end
+    end
+
+    task.wait(0.3)
+    if IsDownedPaused then return false end
+    if IsATMDisabled(ATM) then return false end
+    self[2].Get("transfer_funds", "hand", "bank", CoreData.money.hand)
+    task.wait(1)
+    return true
+end
+
+local function ShouldDeposit()
+    if not Flags.AutoDeposit then return false end
+    return CoreData.money.hand >= Settings.DepositThreshold
+end
+
+local function GetProgressBar()
+    local pg = Client.PlayerGui:FindFirstChild("ProgressBar")
+    if not pg then return nil end
+    local frame = pg:FindFirstChild("ProgressBarFrame")
+    if not frame then return nil end
+    return frame
+end
+
+local function GetProgressScale()
+    local frame = GetProgressBar()
+    if not frame then return 0 end
+    local bar = frame:FindFirstChild("MainFrame")
+    if not bar then return 0 end
+    local amount = bar:FindFirstChild("BarAmount")
+    if not amount then return 0 end
+    return amount.Size.X.Scale
+end
+
+function ModuleService:Get_Skill_Level(ClassName)
+	local sf = Client.PlayerGui.Skills.SkillsHolder.SkillsScrollingFrame
+	for _, c in pairs(sf:GetChildren()) do
+		if not c:IsA("ImageButton") then continue end
+		local t = c:FindFirstChild("SkillTitle")
+		if t then
+			local n, lv = string.match(t.Text, "%s*([^:]-)%s*:%s*(%d+)")
+			if n and string.lower(n) == string.lower(ClassName) then
+				return tonumber(lv) or 0
+			end
+		end
+	end
+	return 0
+end
+
+local _infoCache = {}
+local _infoCacheTick = 0
+local GetInfo = function(w)
+    if tick() - _infoCacheTick > 1 then
+        _infoCache = {}
+        _infoCacheTick = tick()
+    end
+    if _infoCache[w] then return _infoCache[w] end
+    local amount, IsHaving, Uid = 0, false, nil
+    for _, v in pairs(Client.PlayerGui.Items.ItemsHolder.ItemsScrollingFrame:GetChildren()) do
+        if v.Name ~= "Folder" and v.Name ~= "UIGridLayout" then
+            if v:FindFirstChild("ItemName") and v.ItemName.Text == w then
+                Uid = v.Name
+                amount += 1
+                IsHaving = true
+                break
+            end
+        end
+    end
+    local result = { [1] = amount, [2] = IsHaving, [3] = Uid }
+    _infoCache[w] = result
+    return result
+end
+
+local function HandMoney()
+    local success, value = pcall(function()
+        local topRight = PlayerGui:FindFirstChild("TopRightHud")
+        if topRight then
+            local holder = topRight:FindFirstChild("Holder")
+            if holder
+                and holder:FindFirstChild("Frame")
+                and holder.Frame:FindFirstChild("MoneyTextLabel")
+            then
+                return tonumber(holder.Frame.MoneyTextLabel.Text:match("%$(%d+)"))
+            end
+        end
+        return 0
+    end)
+    return success and value or 0
+end
+
+local _atmMoneyLabel = nil
+local function ATMMoney()
+    if not _atmMoneyLabel or not _atmMoneyLabel.Parent then
+        _atmMoneyLabel = nil
+        for _, v in ipairs(PlayerGui:GetDescendants()) do
+            if v:IsA("TextLabel") and string.find(v.Text, "Bank Balance") then
+                _atmMoneyLabel = v
+                break
+            end
+        end
+    end
+    if not _atmMoneyLabel then return 0 end
+    local ok, value = pcall(function()
+        return tonumber(_atmMoneyLabel.Text:match("%$(%d+)"))
+    end)
+    return ok and value or 0
+end
+
+print("[AB] Step 8: Helper functions loaded")
+
+-- ============================================================
+-- Farm Janitor
+-- ============================================================
+local MopNames = { "Diamond Mop", "Gold Mop", "Silver Mop", "Bronze Mop", "Mop" }
+local _lastPurchaseTime = 0
+local _purchaseCooldown = 5
+
+local function GetMopInfo(level)
+    if level >= 55 then return "Diamond Mop", 1500
+    elseif level >= 40 then return "Gold Mop",  800
+    elseif level >= 25 then return "Silver Mop",  300
+    elseif level >= 10 then return "Bronze Mop",  100
+    end
+    return nil, 0
+end
+
+local function GetMopTool()
+    for _, name in pairs(MopNames) do
+        local t = Client.Backpack:FindFirstChild(name) or Char:FindFirstChild(name)
+        if t then return t, t.Parent == Char end
+    end
+    return nil, false
+end
+
+local function HasCorrectMop(expectedMopName)
+    local t = Client.Backpack:FindFirstChild(expectedMopName) or Char:FindFirstChild(expectedMopName)
+    return t ~= nil
+end
+
+local function FindMopInItems()
+    for _, name in pairs(MopNames) do
+        local info = GetInfo(name)
+        if info[2] and info[3] then return name, info[3] end
+    end
+    return nil, nil
+end
+
+local function GetPuddlePriority(name)
+    if name == "ToxicPuddle" then return 1
+    elseif name == "OilPuddle" then return 2
+    elseif name == "NastyPuddle" then return 3
+    elseif name == "LargePuddle" or name == "SmallPuddle" then return 4
+    end
+    return 99
+end
+
+local function CanClean(name, level)
+    if name == "SmallPuddle" then return true
+    elseif name == "LargePuddle" then return level >= 5
+    elseif name == "NastyPuddle" then return level >= 20
+    elseif name == "OilPuddle" then return level >= 35
+    elseif name == "ToxicPuddle" then return level >= 50
+    end
+    return false
+end
+
+local function IsPuddleTaken(puddle)
+    local pos = GetPosition(puddle)
+    if not pos then return false end
+    for _, player in pairs(game.Players:GetPlayers()) do
+        if player ~= Client then
+            local char = player.Character
+            if char then
+                local root = char:FindFirstChild("HumanoidRootPart")
+                if root and (root.Position - pos).Magnitude < 5 then
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
+function ModuleService:BurgePlace()
+    if not Flags.AutoJanitor then JanitorState = "INIT" return end
+    if not self:IsAlive() then return end
+
+    local map = WaitForMap(30)
+    if not map then task.wait(2) return end
+
+    if JanitorState == "INIT" then
+        local lvl = self:Get_Skill_Level("Janitor")
+        local mopName = GetMopInfo(lvl)
+
+        if not mopName then
+            JanitorState = "APPLY_JOB"
+            return
+        end
+
+        local mop = GetMopTool()
+        if mop then
+            if mop.Name == mopName then
+                JanitorState = "APPLY_JOB"
+            else
+                JanitorState = "ENSURE_MOP"
+            end
+            return
+        end
+
+        local ItemsGui = Client.PlayerGui:FindFirstChild("Items")
+        if ItemsGui and not ItemsGui.Enabled then ItemsGui.Enabled = true end
+        task.wait(0.3)
+
+        local foundName, foundUid = FindMopInItems()
+        if foundName and foundUid then
+            if foundName == mopName then
+                self[2].Send("toggle_equip_item", foundUid)
+                task.wait(1)
+            else
+                JanitorState = "ENSURE_MOP"
+            end
+            return
+        end
+
+        JanitorState = "ENSURE_MOP"
+        return
+    end
+
+    if JanitorState == "ENSURE_MOP" then
+        if not self:IsAlive() then task.wait(1) return end
+
+        local lvl = self:Get_Skill_Level("Janitor")
+        local mopName, mopPrice = GetMopInfo(lvl)
+
+        if not mopName then
+            JanitorState = "APPLY_JOB"
+            return
+        end
+
+        if HasCorrectMop(mopName) then
+            JanitorState = "APPLY_JOB"
+            return
+        end
+
+        local handMoney = HandMoney()
+        local bankMoney = ATMMoney()
+
+        if handMoney + bankMoney < mopPrice then
+            JanitorState = "APPLY_JOB"
+            return
+        end
+
+        if handMoney < mopPrice then
+            WithdrawFromATM(self, mopPrice - handMoney)
+            task.wait(1)
+            return
+        end
+
+        local shopZone = workspace:WaitForChild("ShopZone_Hardware", 15)
+        if not shopZone then return end
+
+        if self:Dist(shopZone.Position) > 6 then
+            self:Teleport({ CFrame = CFrame.new(shopZone.Position) })
+            task.wait(1)
+            return
+        end
+
+        local cooldownLeft = _purchaseCooldown - (tick() - _lastPurchaseTime)
+        if cooldownLeft > 0 then task.wait(1) return end
+
+        self[2].Send("purchase_consumable", shopZone, mopName)
+        _lastPurchaseTime = tick()
+        task.wait(1)
+
+        local ItemsGui = Client.PlayerGui:FindFirstChild("Items")
+        if ItemsGui and not ItemsGui.Enabled then ItemsGui.Enabled = true end
+        task.wait(0.3)
+
+        local fn, fu = FindMopInItems()
+        if fn and fu then
+            self[2].Send("toggle_equip_item", fu)
+            task.wait(1)
+        end
+
+        JanitorState = "INIT"
+        return
+    end
+
+    if JanitorState == "APPLY_JOB" then
+        local BurgePlaceBeacon = workspace:FindFirstChild("BurgePlaceBeacon")
+            or workspace:WaitForChild("BurgePlaceBeacon", 10)
+        if not BurgePlaceBeacon then task.wait(2) return end
+
+        local beaconPos = GetPosition(BurgePlaceBeacon)
+        if not beaconPos then return end
+
+        if ShouldDeposit() then
+            self:DoDeposit(beaconPos)
+            task.wait(0.3)
+            self:Teleport({ CFrame = CFrame.new((Root.CFrame * CFrame.new(0, 0, 4)).Position) })
+            task.wait(0.3)
+            return
+        end
+
+        if self:Dist(beaconPos) > 10 then
+            self:Teleport({ CFrame = beaconPos })
+            return
+        end
+
+        self[2].Send("apply_for_job", BurgePlaceBeacon)
+        JanitorState = "WAIT_JOB"
+        task.wait(2)
+        if Client:GetAttribute("Job") == "janitor" then
+            JanitorState = "MOP"
+        end
+        return
+    end
+
+    if JanitorState == "WAIT_JOB" then
+        task.wait(1)
+        local job = Client:GetAttribute("Job")
+        JanitorState = job == "janitor" and "MOP" or "APPLY_JOB"
+        return
+    end
+
+    if Client:GetAttribute("Job") ~= "janitor" then
+        JanitorState = "INIT"
+        return
+    end
+
+    if JanitorState == "INIT" or JanitorState == "ENSURE_MOP" then
+        return
+    end
+
+    if ShouldDeposit() then
+        local BurgePlaceBeacon = workspace:FindFirstChild("BurgePlaceBeacon")
+        local beaconPos = BurgePlaceBeacon and GetPosition(BurgePlaceBeacon)
+        if beaconPos then
+            self:DoDeposit(beaconPos)
+            task.wait(0.3)
+            self:Teleport({ CFrame = CFrame.new((Root.CFrame * CFrame.new(0, 0, 4)).Position) })
+            task.wait(0.3)
+        end
+        return
+    end
+
+    if JanitorState == "MOP" then
+        if ShouldDeposit() then
+            local BurgePlaceBeacon = workspace:FindFirstChild("BurgePlaceBeacon")
+            local beaconPos = BurgePlaceBeacon and GetPosition(BurgePlaceBeacon)
+            if beaconPos then
+                self:DoDeposit(beaconPos)
+                task.wait(0.3)
+                self:Teleport({ CFrame = CFrame.new((Root.CFrame * CFrame.new(0, 0, 4)).Position) })
+                task.wait(0.3)
+            end
+            return
+        end
+
+        local lvl = self:Get_Skill_Level("Janitor")
+        local mopName = GetMopInfo(lvl)
+        local Mop, MopEquipped = GetMopTool()
+
+        if not Mop or (mopName and Mop.Name ~= mopName) then
+            JanitorState = "INIT"
+            return
+        end
+
+        if not MopEquipped then
+            Humanoid:EquipTool(Mop)
+            task.wait(0.3)
+        end
+
+        local Level = self:Get_Skill_Level("Janitor")
+        local BurgerPlace = workspace.Map.Tiles.BurgerPlaceTile:FindFirstChild("BurgerPlace")
+        if not BurgerPlace then return end
+
+        local Interior = BurgerPlace:FindFirstChild("Interior")
+        if not Interior then return end
+
+        local PuddlesFolder = Interior:FindFirstChild("Puddles")
+        if not PuddlesFolder then return end
+
+        local bestPuddle = nil
+        local bestPriority = 99
+        local bestDist = math.huge
+
+        for _, v in pairs(PuddlesFolder:GetChildren()) do
+            if v.Transparency < 0.99 and CanClean(v.Name, Level) then
+                local p = GetPuddlePriority(v.Name)
+                local d = self:Dist(GetPosition(v))
+                if p < bestPriority then
+                    bestPuddle = v
+                    bestPriority = p
+                    bestDist = d
+                elseif p == bestPriority and d < bestDist then
+                    bestPuddle = v
+                    bestDist = d
+                end
+            end
+        end
+
+        if not bestPuddle then task.wait(1) return end
+
+        JanitorState = "CLEAN"
+        self._currentPuddle = bestPuddle
+        return
+    end
+
+    if JanitorState == "CLEAN" then
+        if ShouldDeposit() then
+            JanitorState = "MOP"
+            return
+        end
+
+        local Puddle = self._currentPuddle
+
+        if not Puddle or Puddle.Transparency >= 0.99 then
+            JanitorState = "MOP"
+            return
+        end
+
+        local lvl = self:Get_Skill_Level("Janitor")
+        local mopName = GetMopInfo(lvl)
+        local Mop, MopEquipped = GetMopTool()
+
+        if not Mop or (mopName and Mop.Name ~= mopName) then
+            JanitorState = "INIT"
+            return
+        end
+
+        if not MopEquipped then
+            Humanoid:EquipTool(Mop)
+            task.wait(0.3)
+        end
+
+        local puddlePos = GetPosition(Puddle)
+        if not puddlePos then JanitorState = "MOP" return end
+
+        if IsPuddleTaken(Puddle) then
+            JanitorState = "MOP"
+            return
+        end
+
+        self:Teleport({ CFrame = puddlePos })
+
+        if IsPuddleTaken(Puddle) then
+            JanitorState = "MOP"
+            return
+        end
+
+        self[2].Send("start_cleaning_puddle", Puddle)
+
+        local Changed = false
+        local Conn = Puddle:GetPropertyChangedSignal("Transparency"):Connect(function()
+            Changed = true
+        end)
+
+        local wt = tick() + 10
+        repeat
+            if IsPuddleTaken(Puddle) then
+                Conn:Disconnect()
+                JanitorState = "MOP"
+                return
+            end
+            task.wait(0.3)
+        until Changed or tick() > wt or not Flags.AutoJanitor
+
+        Conn:Disconnect()
+
+        if Puddle.Transparency >= 0.99 then
+            JanitorState = "MOP"
+        end
+        return
+    end
+end
+
+print("[AB] Step 9: Janitor loaded")
+
+-- ============================================================
+-- Farm Steak
+-- ============================================================
+local SteakOrderPos = Vector3.new(-279.16, 256.22, 335.13)
+local SteakList = { "Steak", "BronzeSteak", "SilverSteak", "GoldenSteak", "DiamondSteak" }
+local SteakOutsidePos = Vector3.new(-230.1935272216797, 255.5322723388672, 328.0850524902344)
+local SteakPreparePos = Vector3.new(-228.423172, 255.251801, 330.278656)
+local SteakApplyPos = Vector3.new(-230.680832, 256.501099, 330.690674)
+
+local SteakInteriorPath = { "ShoppingTile", "SteakHouse", "Interior" }
+
+local function GetSteakInterior()
+    local Map = workspace:WaitForChild("Map", 30)
+    if not Map then return nil end
+    local Tiles = Map:WaitForChild("Tiles", 30)
+    if not Tiles then return nil end
+    while true do
+        local current = Tiles
+        local ok = true
+        for _, name in ipairs(SteakInteriorPath) do
+            local found = current:WaitForChild(name, 10)
+            if not found then ok = false break end
+            current = found
+        end
+        if ok then return current end
+        task.wait(3)
+    end
+end
+
+local function GetSteakTool()
+    for _, name in pairs(SteakList) do
+        local t = Client.Backpack:FindFirstChild(name) or Char:FindFirstChild(name)
+        if t then return t, t.Parent == Char end
+    end
+    return nil, false
+end
+
+local function GetSkilletInfo(level)
+    if level >= 40 then return "GoldenSkillet", 1200
+    elseif level >= 25 then return "SilverSkillet", 450
+    elseif level >= 10 then return "BronzeSkillet", 150
+    end
+    return nil, 0
+end
+
+function ModuleService:SteakHouse()
+    if not Flags.AutoSteak then SteakState = "INIT" return end
+    if not self:IsAlive() then return end
+    if IsDownedPaused then return end
+
+    local function SteakOK()
+        if not self:IsAlive() then return false end
+        if IsDownedPaused then return false end
+        if self:Detected() then
+            IsTeleporting = false
+            repeat task.wait(0.5) until not self:Detected() or IsDownedPaused
+            return false
+        end
+        return true
+    end
+
+    if self:Detected() then
+        IsTeleporting = false
+        repeat task.wait(0.5) until not self:Detected() or IsDownedPaused
+        if SteakState == "WAIT_JOB"
+            or SteakState == "APPLY_JOB"
+            or SteakState == "GO_WP"
+            or SteakState == "WORK"
+        then
+            SteakState = "INIT"
+        end
+        return
+    end
+
+    if not SteakOK() then return end
+    if not WaitForMap(10) then task.wait(2) return end
+
+    local steakLevel = self:Get_Skill_Level("Cook")
+    local skilletName, skilletPrice = GetSkilletInfo(steakLevel)
+    if skilletName then
+        local itemInfo = GetInfo(skilletName)
+        if not itemInfo[2] then
+            local handMoney = HandMoney()
+            local bankMoney = ATMMoney()
+            if handMoney + bankMoney >= skilletPrice then
+                if handMoney < skilletPrice then
+                    if not SteakOK() then return end
+                    WithdrawFromATM(self, skilletPrice - handMoney)
+                    return
+                end
+                local shopZone = workspace:WaitForChild("ShopZone_Hardware", 15)
+                if not shopZone then return end
+                if self:Dist(shopZone.Position) > 6 then
+                    if not SteakOK() then return end
+                    self:Teleport({ CFrame = CFrame.new(shopZone.Position) })
+                    task.wait(0.5)
+                    return
+                end
+                if not SteakOK() then return end
+                self[2].Send("purchase_consumable", shopZone, skilletName)
+                task.wait(1)
+                return
+            end
+        end
+    end
+
+    if ShouldDeposit() then
+        if not SteakOK() then return end
+        self:DoDeposit(SteakApplyPos)
+        task.wait(0.3)
+        if not SteakOK() then return end
+        local backPos = (Root.CFrame * CFrame.new(0, 0, 4)).Position
+        self:Teleport({ CFrame = CFrame.new(backPos) })
+        task.wait(0.3)
+        return
+    end
+
+    if not SteakOK() then return end
+
+    local job = Client:GetAttribute("Job")
+
+    if job ~= "steakhouse_cook" then
+        if SteakState == "INIT" or SteakState == "GO_WP" then
+            if self:Dist(SteakOutsidePos) > 6 then
+                SteakState = "GO_WP"
+                if not SteakOK() then
+                    SteakState = "INIT"
+                    IsTeleporting = false
+                    return
+                end
+                self:Teleport({ CFrame = CFrame.new(SteakOutsidePos) })
+                task.wait(0.3)
+                if not SteakOK() then
+                    SteakState = "INIT"
+                    IsTeleporting = false
+                    return
+                end
+                return
+            end
+            SteakState = "APPLY_JOB"
+            return
+        end
+
+        if SteakState == "APPLY_JOB" then
+            if self:Dist(SteakOutsidePos) > 6 then
+                SteakState = "INIT"
+                return
+            end
+            if not SteakOK() then
+                SteakState = "INIT"
+                return
+            end
+            local dist = self:Dist(SteakApplyPos)
+            if dist > 2 then
+                if self:Dist(SteakPreparePos) > 5 then
+                    if not SteakOK() then
+                        SteakState = "INIT"
+                        return
+                    end
+                    self:Teleport({ CFrame = CFrame.new(SteakPreparePos) })
+                    task.wait(0.3)
+                    return
+                else
+                    Root.CFrame = CFrame.new(SteakApplyPos)
+                    task.wait(0.3)
+                    return
+                end
+            end
+            local interior = GetSteakInterior()
+            if not interior then return end
+            if not SteakOK() then
+                SteakState = "INIT"
+                return
+            end
+            self[2].Send("apply_for_job", interior.SteakHouseBeacon)
+            SteakState = "WAIT_JOB"
+            local w1 = tick()
+            repeat task.wait(0.2) until tick() - w1 >= 2 or not SteakOK()
+            if not SteakOK() then
+                SteakState = "INIT"
+                return
+            end
+            if Client:GetAttribute("Job") == "steakhouse_cook" then
+                SteakState = "WORK"
+            end
+            return
+        end
+
+        if SteakState == "WAIT_JOB" then
+            if not SteakOK() then
+                SteakState = "INIT"
+                return
+            end
+            local w2 = tick()
+            repeat task.wait(0.2) until tick() - w2 >= 1 or not SteakOK()
+            if not SteakOK() then
+                SteakState = "INIT"
+                return
+            end
+            if Client:GetAttribute("Job") == "steakhouse_cook" then
+                SteakState = "WORK"
+            else
+                SteakState = "INIT"
+            end
+            return
+        end
+
+        SteakState = "INIT"
+        return
+    end
+
+    if SteakState ~= "WORK" then SteakState = "WORK" end
+
+    if not SteakOK() then return end
+
+    local steakTool, steakEquipped = GetSteakTool()
+    if not steakTool then
+        if self:Dist(SteakOrderPos) > 6 then
+            if not SteakOK() then return end
+            self:Teleport({ CFrame = SteakOrderPos })
+            task.wait(0.5)
+            return
+        end
+        if not SteakOK() then return end
+        local Interior = GetSteakInterior()
+        if not Interior then return end
+        for _, v in pairs(Interior.Fridge:GetChildren()) do
+            if v:FindFirstChild("Attachment") then
+                local prompt = v:FindFirstChild("Attachment"):FindFirstChild("ProximityPrompt")
+                if prompt then
+                    fireproximityprompt(prompt)
+                    break
+                end
+            end
+        end
+        if not SteakOK() then return end
+        steakTool, steakEquipped = GetSteakTool()
+        if not steakTool then
+            task.wait(0.2)
+            steakTool, steakEquipped = GetSteakTool()
+            if not steakTool then return end
+        end
+        return
+    end
+
+    if not SteakOK() then return end
+    if not steakEquipped then
+        Humanoid:EquipTool(steakTool)
+        task.wait(0.3)
+    end
+
+    if not SteakOK() then return end
+
+    local Interior = GetSteakInterior()
+    if not Interior then return end
+
+    local beaconPos, selectedBeacon = nil, nil
+    for _, v in pairs(Interior:GetChildren()) do
+        if v.Name == "Beacon" and v.PrimaryPart then
+            selectedBeacon = v
+            beaconPos = v.PrimaryPart.Position
+            break
+        end
+    end
+    if not selectedBeacon or not beaconPos then
+        selectedBeacon = workspace:FindFirstChild("Beacon")
+        if selectedBeacon and selectedBeacon.PrimaryPart then
+            beaconPos = selectedBeacon.PrimaryPart.Position
+        end
+    end
+    if not selectedBeacon or not beaconPos then return end
+
+    if self:Dist(beaconPos) > 5 then
+        if not SteakOK() then return end
+        self:Teleport({ CFrame = beaconPos })
+        task.wait(0.5)
+    end
+
+    if not SteakOK() then return end
+
+    local progressFrame = GetProgressBar()
+    local tryStart = tick()
+    while not (progressFrame and progressFrame.Visible) do
+        if not SteakOK() then return end
+        if tick() - tryStart > 2 then return end
+        for _, v in pairs(Interior:GetChildren()) do
+            if v.Name == "Grill" then
+                self[2].Send("start_grilling_2", v)
+            end
+        end
+        task.wait(0.3)
+        progressFrame = GetProgressBar()
+    end
+
+    if not SteakOK() then return end
+
+    local threshold = 0.95
+    if skilletName == "GoldenSkillet" and GetInfo("GoldenSkillet")[2] then
+        threshold = 0.75
+    end
+
+    repeat
+        task.wait(0.1)
+        if not SteakOK() then return end
+    until GetProgressScale() > threshold
+        or not (GetProgressBar() and GetProgressBar().Visible)
+
+    if not SteakOK() then return end
+
+    if GetProgressScale() > threshold then
+        for _, v in pairs(Interior:GetChildren()) do
+            if v.Name == "Grill" then
+                self[2].Send("finish_grilling_2", v, "Perfect")
+            end
+        end
+        task.wait(1)
+    end
+end
+
+print("[AB] Step 10: Steak loaded")
+
+-- ============================================================
+-- Farm Quick11
+-- ============================================================
+function ModuleService:Quick_11()
+   if not Flags.AutoQuick11 then return end
+   if not self:IsAlive() then return end
+   if IsDownedPaused then return end
+   if self:Detected() then task.wait(0.5) return end
+
+   if not WaitForMap(10) then task.wait(2) return end
+
+   local GasTile = workspace.Map.Tiles:FindFirstChild("GasStationTile")
+   if not GasTile then return end
+   local Quick11 = GasTile:FindFirstChild("Quick11")
+   if not Quick11 then return end
+
+   local Interior = Quick11:FindFirstChild("Interior")
+   if not Interior then
+       for _, v in pairs(Quick11:GetChildren()) do
+           if v:IsA("Model") or v:IsA("Folder") then Interior = v break end
+       end
+   end
+   if not Interior then return end
+
+   task.spawn(function()
+       while Flags.AutoQuick11 do
+           task.wait(0.1)
+           local wsBeacon = workspace:FindFirstChild("Beacon")
+           if wsBeacon then
+               wsBeacon:Destroy()
+           end
+       end
+   end)
+
+   local Quick11_ATM   = Interior:FindFirstChild("ATM")
+   local Quick11Beacon = Interior:FindFirstChild("Quick11Beacon")
+   local Quick11_Door  = Interior:FindFirstChild("DoorSystem")
+       or Quick11:FindFirstChild("DoorSystem")
+       or Interior:FindFirstChildWhichIsA("Model")
+   if not Quick11_Door then return end
+
+   if Client:GetAttribute("Job") ~= "shelf_stocker" then
+       if ShouldDeposit() then
+           if self:Detected() then task.wait(0.5) return end
+           self:DoDeposit(GetPosition(Quick11_Door))
+           return
+       end
+       if self:Dist(GetPosition(Quick11_Door)) < 150 then
+           if self:Detected() then task.wait(0.5) return end
+           self[2].Send("apply_for_job", Quick11Beacon)
+       end
+       if self:Detected() then task.wait(0.5) return end
+       self:Teleport({ CFrame = GetPosition(Quick11_Door) })
+       return
+   end
+
+   if self:Detected() then task.wait(0.5) return end
+
+   if ShouldDeposit() then
+       if Quick11_ATM and not self:Error(Quick11_ATM) then
+           if self:Detected() then task.wait(0.5) return end
+           self:Teleport({ CFrame = Vector3.new(103, 255, 168) })
+           task.wait(0.5)
+           self[2].Get("transfer_funds", "hand", "bank", CoreData.money.hand)
+       else
+           if self:Detected() then task.wait(0.5) return end
+           self:DoDeposit(GetPosition(Quick11_Door))
+       end
+       return
+   end
+
+   local ShelfStock = Interior:FindFirstChild("ShelfStockingJob")
+   if not ShelfStock then return end
+
+   local Shelves = ShelfStock:FindFirstChild("Shelves")
+   if not Shelves then return end
+
+   local closestShelf = nil
+   local closestDist = math.huge
+   for _, shelf in pairs(Shelves:GetChildren()) do
+       if shelf:IsA("BasePart") then
+           local d = (Root.Position - shelf.Position).Magnitude
+           if d < closestDist then
+               closestShelf = shelf
+               closestDist = d
+           end
+       end
+   end
+   if not closestShelf then return end
+
+   local stockLength = 25
+   local ok2, JobData = pcall(require, game.ReplicatedStorage.Modules.Game.Jobs.JobData)
+   if ok2 and JobData and JobData.job_info
+       and JobData.job_info.shelf_stocker
+       and JobData.job_info.shelf_stocker.stock_shelf_length
+   then
+       stockLength = JobData.job_info.shelf_stocker.stock_shelf_length
+       local ok3, SkillsList = pcall(require, game.ReplicatedStorage.Modules.Game.Skills.SkillsList)
+       local speedMult = 1
+       if ok3 and SkillsList then
+           local skillList = SkillsList.list and SkillsList.list.shelf_stocker
+           if skillList then
+               for _, skill in pairs(skillList) do
+                   if skill.reward_info and skill.reward_info.speed_percentage_increase
+                       and SkillsList.has_skill(CoreData, "shelf_stocker", skill.name)
+                   then
+                       speedMult = speedMult + skill.reward_info.speed_percentage_increase / 100
+                   end
+               end
+           end
+       end
+       stockLength = stockLength / speedMult
+   end
+
+   local BoxTool = Client.Backpack:FindFirstChild("BoxTool") or Char:FindFirstChild("BoxTool")
+   if not BoxTool then
+       local L_Box = ShelfStock:FindFirstChild("GoldenBox")
+       local L_Box_Text = L_Box and L_Box.BillboardGui.Frame.StockLeft.Text
+       local TypeBox = L_Box_Text and (tonumber(L_Box_Text:match("(%d+)/")) or 0) > 0 and "GoldenBox" or "NormalBox"
+       local CanNoclip = Vector3.new(98.5302963256836, 257.29205322265625, 205.9313201904297)
+
+       if TypeBox == "GoldenBox" then
+           local GBP = ShelfStock:FindFirstChild("GoldenBox")
+           if not GBP then return end
+           if self:Detected() then task.wait(0.5) return end
+           self:Teleport({ CFrame = CanNoclip })
+           task.wait(0.5)
+           Root:PivotTo(CFrame.new(CanNoclip - Vector3.yAxis * 20))
+           task.wait(0.5)
+           if self:Detected() then task.wait(0.5) return end
+           self:Teleport({ CFrame = GetPosition(GBP) }, 2)
+           for _ = 1, 10 do SafeFirePrompt(GBP) end
+           self:Teleport({ CFrame = CanNoclip - Vector3.yAxis * 20 })
+           task.wait(0.5)
+           Root:PivotTo(CFrame.new(CanNoclip))
+           task.wait(0.5)
+           return
+       end
+
+       if self:Dist(GetPosition(Quick11_Door)) > 20 then
+           if self:Detected() then task.wait(0.5) return end
+           self:Teleport({ CFrame = GetPosition(Quick11_Door) })
+           return
+       end
+       local BoxPart = ShelfStock:FindFirstChild(TypeBox)
+       if not BoxPart then return end
+       local nbPrompt = BoxPart:FindFirstChildOfClass("ProximityPrompt")
+       if nbPrompt then nbPrompt.MaxActivationDistance = 0 end
+       for _ = 1, 8 do SafeFirePrompt(BoxPart) end
+       if nbPrompt then nbPrompt.MaxActivationDistance = 30 end
+       return
+   end
+
+   if BoxTool.Parent == Client.Backpack then
+       pcall(function() Humanoid:EquipTool(BoxTool) end)
+       task.wait(0.3)
+   end
+
+   if closestDist > 2 then
+       if self:Detected() then task.wait(0.5) return end
+       self:Teleport({ CFrame = closestShelf.Position })
+       task.wait(0.5)
+   end
+
+   if not Flags.AutoQuick11 then return end
+   if not self:IsAlive() then return end
+   if self:Detected() then task.wait(0.5) return end
+
+   local startOk = self[2].Get("player_started_stocking_shelf", closestShelf)
+   if not startOk then
+       task.wait(1)
+       return
+   end
+
+   _G.IsStocking = true
+
+   local waitStart = tick()
+   repeat
+       task.wait(0.1)
+       if not Flags.AutoQuick11 then return end
+       if not self:IsAlive() then return end
+       if IsDownedPaused then return end
+       if self:Detected() then task.wait(0.5) return end
+       local bt = Client.Backpack:FindFirstChild("BoxTool") or Char:FindFirstChild("BoxTool")
+       if not bt or not bt.Parent then return end
+   until tick() - waitStart >= stockLength or tick() - waitStart >= 60
+
+   _G.IsStocking = false
+
+   if not Flags.AutoQuick11 then return end
+   if not self:IsAlive() then return end
+   if self:Detected() then task.wait(0.5) return end
+
+   local fist = Char:FindFirstChild("Fists")
+   if fist then
+       Humanoid:UnequipTools()
+       task.wait(0.1)
+   end
+
+   self[2].Get("player_stocked_shelf", closestShelf)
+   task.wait(0.5)
+
+   local shelfPrompt = closestShelf:FindFirstChildOfClass("ProximityPrompt")
+   if shelfPrompt then shelfPrompt.MaxActivationDistance = 30 end
+
+   local waitDrop = tick()
+   repeat task.wait(0.1) until
+       not (Client.Backpack:FindFirstChild("BoxTool") or Char:FindFirstChild("BoxTool"))
+       or tick() - waitDrop > 3
+   task.wait(0.5)
+end
+
+print("[AB] Step 11: Quick11 loaded")
+
+-- ============================================================
+-- Farm ATM
+-- ============================================================
+_G.HackToolClass = _G.HackToolClass or "Automatic"
+_G.HackToolAmount = _G.HackToolAmount or 3
+_G.StopDriving = false
+_G.VehicleType = _G.VehicleType or "Bike"
+local ATM_ARRIVE_DIST = 1.5
+local ATM_DRIVE_SPEED = 60
+local BMX_PRICE = 870
+local ATM_FRONT_OFFSET = string.lower(_G.VehicleType) == "car" and 3.5 or 2.5
+local ATM_BACK_OFFSET = -9.7
+local ATM_EARLY_DISMOUNT_DIST = 20
+local ATM_COOLDOWN_SECS = 30
+local _atmLastHacked = {}
+local _hackFloatThread = nil
+local _isFloating = false
+local ATM_EXIT_MATCH_DIST = 15
+local VEHICLE_REPAIR_THRESHOLD = 0.30
+local _lastRepairTime = 0
+local _repairCooldown = 15
+local _espAtmEnabled = false
+local _espAtmParts = {}
+local _drivePathCache = {}
+local _standingStart = nil
+
+local EDGES = {
+    {1,2},{2,3},{3,4},{4,1},
+    {5,6},{6,7},{7,8},{8,5},
+    {1,5},{2,6},{3,7},{4,8},
+}
+
+local ATM_FORCE_FRONT_POS = {
+    Vector3.new(-201.13021850585938, 255.35302734375, -573.53125),
+    Vector3.new(-155.82275390625, 255.1853485107422, 442.9078674316406),
+    Vector3.new(839.2535400390625, 255.30136108398438, -164.10479736328125),
+    Vector3.new(1000.2333374023438, 255.30435180664062, -634.9163208007812),
+}
+
+local ATM_FORCE_RIGHT_POS = {
+    Vector3.new(109.73040771484375, 255.2530059814453, 464.5361328125),
+    Vector3.new(90.75698852539062, 255.4029998779297, 167.40797424316406),
+}
+
+local ATM_EXIT_POSITIONS = {
+    {
+        atm = Vector3.new(-155.82275390625, 255.1853485107422, 442.9078674316406),
+        exit = Vector3.new(-97.91786193847656, 255.0996856689453, 406.4349670410156),
+    },
+    {
+        atm = Vector3.new(-201.13021850585938, 255.35302734375, -573.53125),
+        exit = Vector3.new(-119.60304260253906, 255.2150421142578, -551.3428344726562),
+    },
+}
+
+local function GetATMExitPos(atm)
+    local atmPos = atm:GetPivot().Position
+    for _, entry in ipairs(ATM_EXIT_POSITIONS) do
+        if (atmPos - entry.atm).Magnitude <= ATM_EXIT_MATCH_DIST then
+            return entry.exit
+        end
+    end
+    return nil
+end
+
+local function GetChipPrice(types)
+    local prices = {
+        HackToolBasic = 10,
+        HackToolPro = 150,
+        HackToolUltimate = 350,
+        HackToolQuantum = 550,
+    }
+    return prices[types] or 0
+end
+
+local function GetBMXShopPos()
+    local ok, crate = pcall(function()
+        return workspace.Map.Tiles.BurgerPlaceTile
+            .UrbanCyclesAndSkates.Interior
+            .Crates["Bike Crate"]
+    end)
+    if not ok or not crate then return nil, nil end
+    local touchPart = crate:FindFirstChild("Beacon")
+        and crate.Beacon:FindFirstChild("TouchPart")
+    if not touchPart then return nil, nil end
+    return touchPart.Position, crate
+end
+
+local function GetVehicleItemFromInventory()
+    local vehicleType = string.lower(_G.VehicleType or "Bike")
+    local sf = Client.PlayerGui.Items.ItemsHolder.ItemsScrollingFrame
+    for _, v in pairs(sf:GetChildren()) do
+        if v.Name ~= "Folder" and v.Name ~= "UIGridLayout" then
+            local itemType = v:GetAttribute("ItemType")
+            if itemType and string.lower(itemType) == vehicleType then
+                return { [1] = 1, [2] = true, [3] = v.Name }
+            end
+        end
+    end
+    return { [1] = 0, [2] = false, [3] = nil }
+end
+
+local function GetMyVehicle()
+    for _, v in ipairs(workspace.Vehicles:GetChildren()) do
+        if v:GetAttribute("OwnerUserId") == Client.UserId then
+            return v
+        end
+    end
+    return nil
+end
+
+local function GetVehicleItemData(vehicle)
+    if not vehicle then return nil end
+    local guid = vehicle:GetAttribute("ItemGUID")
+    if not guid then return nil end
+    local ok, ItemUtils = pcall(require, game.ReplicatedStorage.Modules.Game.Inventory.ItemUtils)
+    if not ok then return nil end
+    local ok2, data = pcall(function()
+        return ItemUtils.get_item_info(CoreData, guid)
+    end)
+    if not ok2 or not data then return nil end
+    return data
+end
+
+local function GetVehicleHPPercent(vehicle)
+    if not vehicle then return 1 end
+    local data = GetVehicleItemData(vehicle)
+    if not data then return 1 end
+    if data.destroyed then return 0 end
+    local ok, ItemUtils = pcall(require, game.ReplicatedStorage.Modules.Game.Inventory.ItemUtils)
+    if not ok then return 1 end
+    local inst = ItemUtils.get_item_instance(data.name)
+    if not inst then return 1 end
+    local maxHp = inst:GetAttribute("Health")
+    local currentHp = data.health
+    if not maxHp or maxHp == 0 or currentHp == nil then return 1 end
+    return math.clamp(currentHp / maxHp, 0, 1)
+end
+
+local function GetVehicleRepairCost(data)
+    if not data then return 9999 end
+    local ok, Recovery = pcall(require, game.ReplicatedStorage.Modules.Game.Inventory.Recovery)
+    if not ok then return 9999 end
+    local ok2, cost = pcall(function()
+        return Recovery.get_repair_price_for_vehicle(data.name, data.health, data)
+    end)
+    if ok2 and cost and cost > 0 then return cost end
+    return 9999
+end
+
+local function RepairVehicleByGuid(self, guid)
+    if not guid then return false end
+    if IsDownedPaused then return false end
+    if tick() - _lastRepairTime < _repairCooldown then return false end
+    local ok, ItemUtils = pcall(require, game.ReplicatedStorage.Modules.Game.Inventory.ItemUtils)
+    if not ok then return false end
+    local ok2, data = pcall(function()
+        return ItemUtils.get_item_info(CoreData, guid)
+    end)
+    if not ok2 or not data then return false end
+    local repairCost = GetVehicleRepairCost(data)
+    local handMoney = HandMoney()
+    if handMoney < repairCost then
+        local need = repairCost - handMoney
+        local bank = ATMMoney() or 0
+        if bank < need then return false end
+        if Humanoid.Sit then
+            DismountVehicle(self, GetMyVehicle())
+            task.wait(0.3)
+        end
+        local atmForWd, _ = GetBestATM()
+        if not atmForWd then return false end
+        local standPos = GetATMStandPos(atmForWd)
+        if (Root.Position - standPos).Magnitude > ATM_INTERACT_DIST then
+            self:Teleport({ CFrame = CFrame.new(standPos) })
+            task.wait(0.5)
+        end
+        if IsATMDisabled(atmForWd) then return false end
+        self[2].Get("transfer_funds", "bank", "hand", need)
+        task.wait(0.5)
+    end
+    self[2].Get("repair_vehicle", guid)
+    _lastRepairTime = tick()
+    task.wait(1)
+    return true
+end
+
+local function RepairVehicle(self, vehicle)
+    if not vehicle then return false end
+    local guid = vehicle:GetAttribute("ItemGUID")
+    return RepairVehicleByGuid(self, guid)
+end
+
+RunService.Heartbeat:Connect(function()
+    local vehicle = GetMyVehicle()
+    if not vehicle or not vehicle.PrimaryPart then return end
+    if IsDownedPaused then return end
+    if Humanoid and Humanoid.Sit then return end
+    local Chassis = vehicle:FindFirstChild("Chassis")
+    if not Chassis then return end
+    for _, Part in ipairs(Chassis:GetDescendants()) do
+        if Part:IsA("BasePart") then
+            if Part.AssemblyLinearVelocity.Magnitude > 2000 then
+                Part.AssemblyLinearVelocity = Vector3.yAxis * math.random()
+            end
+            if Part.AssemblyAngularVelocity.Magnitude > 2000 then
+                Part.AssemblyAngularVelocity = Vector3.yAxis * math.random()
+            end
+            if math.abs(Part.AssemblyAngularVelocity.X) > 15
+                or math.abs(Part.AssemblyAngularVelocity.Z) > 15
+            then
+                Part.AssemblyAngularVelocity = Vector3.new(
+                    Part.AssemblyAngularVelocity.X * 0.3,
+                    Part.AssemblyAngularVelocity.Y,
+                    Part.AssemblyAngularVelocity.Z * 0.3
+                )
+            end
+        end
+    end
+    local Wheels = vehicle:FindFirstChild("Wheels")
+    if Wheels then
+        for _, Wheel in ipairs(Wheels:GetChildren()) do
+            if Wheel:IsA("BasePart") then
+                local Distance = (Wheel.Position - Chassis.Position).Magnitude
+                if Distance > 50 then
+                    Wheel:PivotTo(Chassis:GetPivot())
+                end
+            end
+        end
+    end
+end)
+
+local function CreateDrivePath(radius)
+   local isCar = string.lower(_G.VehicleType) == "car"
+   local ok, p = pcall(function()
+       return PathfindingService:CreatePath({
+           AgentCanJump = true,
+           AgentHeight = 3.5,
+           AgentRadius = isCar and (radius or 3) or 2.5,
+           AgentMaxSlope = 95,
+           WaypointSpacing = 3.5,
+           AgentJumpHeight = 15,
+           Costs = {
+               DoorArea = 1,
+               Cars = 1,
+               BlockedNode = 100,
+               Water = math.huge,
+               Blocked = math.huge,
+           },
+       })
+   end)
+   return ok and p or nil
+end
+
+local function Driveto(self, model, destination)
+   _G.StopDriving = true
+   task.wait()
+   _G.StopDriving = false
+   if not model or not model.PrimaryPart then
+       ATM_STATE = "IDLE"
+       return false
+   end
+
+   local detectThread = task.spawn(function()
+       while not _G.StopDriving do
+           task.wait(0.5)
+           if IsDownedPaused then
+               _G.StopDriving = true
+               break
+           end
+           if self:Detected() then
+               _G.StopDriving = true
+               ATM_STATE = "FIND_ATM"
+               break
+           end
+       end
+   end)
+
+   local isCar = string.lower(_G.VehicleType) == "car"
+   local path
+
+   local radiusList = isCar and { 9, 6, 2 } or { 2.5 }
+   for _, r in ipairs(radiusList) do
+       local p = CreateDrivePath(r)
+       if not p then continue end
+       local ok = pcall(function()
+           p:ComputeAsync(model.PrimaryPart.Position, destination)
+       end)
+       if ok and p.Status == Enum.PathStatus.Success then
+           path = p
+           break
+       end
+   end
+
+   if not path then
+       task.cancel(detectThread)
+       return false
+   end
+
+   local waypoints = path:GetWaypoints()
+
+   local clip = model.PrimaryPart:FindFirstChild("CarClip")
+   if not clip then
+       clip = Instance.new("BodyVelocity")
+       clip.Name = "CarClip"
+       clip.MaxForce = Vector3.new(1e5, 1e5, 1e5)
+       clip.P = 1250
+       clip.Velocity = Vector3.zero
+       clip.Parent = model.PrimaryPart
+   end
+
+   local _arrivedDest = true
+
+   for i, waypoint in ipairs(waypoints) do
+       if _G.StopDriving or IsDownedPaused then
+           _arrivedDest = false
+           break
+       end
+
+       local startPos = model.PrimaryPart.Position
+       local goalPos = waypoint.Position + Vector3.new(0, isCar and 3.5 or 1.5, 0)
+       local dir = (goalPos - startPos).Unit
+       local distance = (goalPos - startPos).Magnitude
+       local moved = 0
+       local startT = tick()
+       local jumpedOver = false
+
+       if waypoint.Action == Enum.PathWaypointAction.Jump then
+           local forwardDir = (goalPos - startPos)
+           local forwardDist = forwardDir.Magnitude
+           local forwardUnit = forwardDist > 0.1 and forwardDir.Unit or dir
+
+           local obstacleHit = workspace:Raycast(
+               startPos + Vector3.new(0, 1, 0),
+               forwardUnit * math.min(forwardDist, 15),
+               RaycastParams.new()
+           )
+
+           local shouldJump =
+               (obstacleHit ~= nil and not obstacleHit.Instance:IsA("Terrain") and obstacleHit.Normal.Y < 0.95)
+               or (goalPos.Y - startPos.Y) > 0.3
+
+           if shouldJump then
+               local jumpHeight = 27
+               local steps = 18
+               local startJump = model.PrimaryPart.Position
+               local nextWp = waypoints[i + 1]
+               local landPos
+               if nextWp then
+                   landPos = nextWp.Position + Vector3.new(0, isCar and 3.5 or 2, 0)
+                   jumpedOver = true
+               else
+                   landPos = goalPos + forwardUnit * 6
+               end
+               for j = 1, steps do
+                   if _G.StopDriving or IsDownedPaused then break end
+                   local t2 = j / steps
+                   local arc = math.sin(t2 * math.pi) * jumpHeight
+                   local mid2 = startJump:Lerp(landPos, t2) + Vector3.new(0, arc, 0)
+                   model:SetPrimaryPartCFrame(CFrame.lookAt(mid2, mid2 + dir))
+                   RunService.Heartbeat:Wait()
+               end
+           end
+       end
+
+       if jumpedOver then
+           continue
+       end
+
+       local conn
+       conn = RunService.Heartbeat:Connect(function(delta)
+           if _G.StopDriving or IsDownedPaused then
+               conn:Disconnect()
+               return
+           end
+           if moved >= distance then
+               conn:Disconnect()
+               return
+           end
+           if not Humanoid.Sit then
+               conn:Disconnect()
+               return
+           end
+
+           local rayParams = RaycastParams.new()
+           rayParams.FilterType = Enum.RaycastFilterType.Exclude
+           rayParams.FilterDescendantsInstances = { model, Character }
+           local hit = workspace:Raycast(model.PrimaryPart.Position, dir * 7, rayParams)
+           if hit and hit.Instance then
+               local name = hit.Instance.Name:lower()
+               local parent = hit.Instance.Parent and hit.Instance.Parent.Name:lower() or ""
+               local isDoor = name:find("door") or parent:find("door")
+               local isPole = hit.Instance.Parent and hit.Instance.Parent:IsA("Model")
+               if not isDoor and not isPole then
+                   local side = math.random() > 0.5 and 1 or -1
+                   local dodgePos = model.PrimaryPart.Position + (model.PrimaryPart.CFrame.RightVector * side * 10)
+                   model:SetPrimaryPartCFrame(CFrame.lookAt(dodgePos, dodgePos + dir))
+               end
+           end
+
+           moved = math.min(moved + delta * ATM_DRIVE_SPEED, distance)
+
+           local newPos = startPos + dir * moved
+           model:SetPrimaryPartCFrame(CFrame.lookAt(newPos, newPos + dir))
+           model.PrimaryPart.AssemblyLinearVelocity = Vector3.zero
+           model.PrimaryPart.AssemblyAngularVelocity = Vector3.zero
+       end)
+
+       repeat task.wait() until moved >= distance or _G.StopDriving or IsDownedPaused
+       if conn then conn:Disconnect() end
+       if not _arrivedDest then break end
+   end
+
+   task.cancel(detectThread)
+   local old = model.PrimaryPart:FindFirstChild("CarClip")
+   if old then old:Destroy() end
+
+   local finalDist = (model.PrimaryPart.Position - destination).Magnitude
+   if not _arrivedDest or finalDist > ATM_ARRIVE_DIST + 5 then
+       return false
+   end
+   return true
+end
+
+local _vehicleFloatThread = nil
+
+local function SuspendVehicle(vehicle, height)
+    if not vehicle or not vehicle.PrimaryPart then return end
+    if _vehicleFloatThread then
+        task.cancel(_vehicleFloatThread)
+        _vehicleFloatThread = nil
+    end
+    local cf = vehicle.PrimaryPart.CFrame
+    local ray = workspace:Raycast(
+        Vector3.new(cf.X, 500, cf.Z),
+        Vector3.new(0, -600, 0)
+    )
+    local groundY = ray and ray.Position.Y or cf.Y
+    local targetY = groundY + (height or 50)
+    _vehicleFloatThread = task.spawn(function()
+        while true do
+            task.wait()
+            if not vehicle or not vehicle.PrimaryPart then break end
+            if ATM_STATE ~= "ARRIVED_ATM" and ATM_STATE ~= "HACKING" then
+                _vehicleFloatThread = nil
+                break
+            end
+            local vcf = vehicle.PrimaryPart.CFrame
+            vehicle:SetPrimaryPartCFrame(CFrame.new(vcf.X, targetY, vcf.Z) * (vcf - vcf.p))
+            vehicle.PrimaryPart.AssemblyLinearVelocity = Vector3.zero
+            vehicle.PrimaryPart.AssemblyAngularVelocity = Vector3.zero
+        end
+    end)
+end
+
+local function RestoreVehicle(vehicle)
+   if _vehicleFloatThread then
+       task.cancel(_vehicleFloatThread)
+       _vehicleFloatThread = nil
+   end
+   if not vehicle or not vehicle.PrimaryPart then return end
+   local cf = vehicle.PrimaryPart.CFrame
+   local ray = workspace:Raycast(
+       Vector3.new(cf.X, 500, cf.Z),
+       Vector3.new(0, -600, 0)
+   )
+   local groundY = ray and (ray.Position.Y + 1.5) or (Root.Position.Y)
+   vehicle.PrimaryPart.AssemblyLinearVelocity = Vector3.zero
+   vehicle.PrimaryPart.AssemblyAngularVelocity = Vector3.zero
+   vehicle:SetPrimaryPartCFrame(CFrame.new(cf.X, groundY, cf.Z))
+   vehicle.PrimaryPart.AssemblyLinearVelocity = Vector3.zero
+   vehicle.PrimaryPart.AssemblyAngularVelocity = Vector3.zero
+end
+
+local function SuspendPlayer(height)
+    if not Root then return end
+    if _hackFloatThread then
+        task.cancel(_hackFloatThread)
+        _hackFloatThread = nil
+    end
+
+    local waitT = tick()
+    repeat
+        task.wait(0.05)
+    until (Humanoid and Humanoid.FloorMaterial ~= Enum.Material.Air)
+        or tick() - waitT > 1.5
+
+    local ray = workspace:Raycast(
+        Root.Position + Vector3.new(0, 5, 0),
+        Vector3.new(0, -50, 0)
+    )
+    local groundY = ray and ray.Position.Y or Root.Position.Y
+    local targetY = groundY + (height or 0)
+
+    _isFloating = true
+    _hackFloatThread = task.spawn(function()
+        while true do
+            task.wait()
+            if not Root then break end
+            local pos = Root.Position
+            Root.CFrame = CFrame.new(pos.X, targetY, pos.Z) * (Root.CFrame - Root.CFrame.p)
+            Root.AssemblyLinearVelocity = Vector3.zero
+            Root.AssemblyAngularVelocity = Vector3.zero
+        end
+    end)
+end
+
+local function RestorePlayer()
+    if _hackFloatThread then
+        task.cancel(_hackFloatThread)
+        _hackFloatThread = nil
+    end
+    _isFloating = false
+    if Humanoid then
+        Humanoid:ChangeState(Enum.HumanoidStateType.Freefall)
+    end
+end
+
+local function DisableVehicleCollision(vehicle)
+    if not vehicle then return end
+    for _, Descendant in next, vehicle:GetDescendants() do
+        if Descendant:IsA("BasePart") then
+            if not Descendant:GetAttribute("OldCanCollide") then
+                Descendant:SetAttribute("OldCanCollide", Descendant.CanCollide)
+            end
+            Descendant.CanCollide = false
+            Descendant.CanQuery = false
+        end
+    end
+end
+
+local function RestoreVehicleCollision(vehicle)
+    if not vehicle then return end
+    for _, Descendant in next, vehicle:GetDescendants() do
+        if Descendant:IsA("BasePart") then
+            Descendant.CanQuery = true
+            local old = Descendant:GetAttribute("OldCanCollide")
+            if old ~= nil then
+                Descendant.CanCollide = old
+                Descendant:SetAttribute("OldCanCollide", nil)
+            end
+        end
+    end
+end
+
+local function DismountVehicle(self, vehicle)
+    if not Humanoid.Sit then return true end
+    if vehicle and vehicle.PrimaryPart then
+        local clip = vehicle.PrimaryPart:FindFirstChild("CarClip")
+        if clip then clip:Destroy() end
+        vehicle.PrimaryPart.AssemblyLinearVelocity = Vector3.zero
+        vehicle.PrimaryPart.AssemblyAngularVelocity = Vector3.zero
+    end
+    if self and self[2] then self[2].Get("exit_seat") end
+    local t = tick()
+    repeat task.wait(0.05) until not Humanoid.Sit or tick() - t > 1
+    if Root then
+        Root.AssemblyLinearVelocity = Vector3.zero
+        Root.AssemblyAngularVelocity = Vector3.zero
+    end
+    return not Humanoid.Sit
+end
+
+local function TryMountVehicle(v)
+    if not v then return false end
+    local chassis = v:FindFirstChild("Chassis")
+    local dpAttach = chassis and chassis:FindFirstChild("DrivePromptAttachment")
+    local dp = dpAttach and dpAttach:FindFirstChild("DrivePrompt")
+    if not dp then return false end
+    local dist = (Root.Position - dp.Parent.WorldPosition).Magnitude
+    if dist > 8 then
+        local frontPos = (Root.CFrame * CFrame.new(0, 0, -3)).Position
+        v:SetPrimaryPartCFrame(CFrame.new(frontPos))
+        task.wait(0.1)
+    end
+    pcall(function() fireproximityprompt(dp, 1) end)
+    local t = tick()
+    repeat RunService.Heartbeat:Wait() until Humanoid.Sit or tick() - t > 1
+    if Humanoid.Sit and v.PrimaryPart then
+        v.PrimaryPart.AssemblyLinearVelocity = Vector3.zero
+        v.PrimaryPart.AssemblyAngularVelocity = Vector3.zero
+    end
+    return Humanoid.Sit
+end
+
+local function SpawnAndRideVehicle(self)
+    local itemInfo = GetVehicleItemFromInventory()
+    if not itemInfo[2] then return false end
+    self[2].Send("toggle_equip_item", itemInfo[3])
+    task.wait(0.5)
+    local vehicle = GetMyVehicle()
+    if not vehicle then task.wait(1) vehicle = GetMyVehicle() end
+    if not vehicle then return false end
+    if TryMountVehicle(vehicle) then return true end
+
+    local isCar = string.lower(_G.VehicleType) == "car"
+    local frontPos = (Root.CFrame * CFrame.new(0, 0, isCar and -10 or -5)).Position
+    vehicle:SetPrimaryPartCFrame(CFrame.new(frontPos))
+    task.wait(0.4)
+    return TryMountVehicle(vehicle)
+end
+
+local function EnsureOnVehicle(self)
+    local v = GetMyVehicle()
+    if v and Humanoid.Sit then return v end
+    if v and not Humanoid.Sit then
+        local mountTries = 0
+        repeat
+            task.wait(0.3)
+            v = GetMyVehicle() or v
+            if not v or not v.Parent then break end
+            TryMountVehicle(v)
+            mountTries += 1
+        until Humanoid.Sit or mountTries >= 10
+        if Humanoid.Sit then return GetMyVehicle() end
+        TeleportService:Teleport(game.PlaceId, Client)
+        return nil
+    end
+    if not SpawnAndRideVehicle(self) then return nil end
+    return GetMyVehicle()
+end
+
+local function IsBackATM(atm)
+    local area = atm:FindFirstChild("Area")
+    local checkPos = area and area.Position or atm:GetPivot().Position
+    local Params = RaycastParams.new()
+    Params.FilterType = Enum.RaycastFilterType.Exclude
+    Params.FilterDescendantsInstances = { atm }
+    local Result = workspace:Raycast(checkPos + Vector3.new(0, 20, 0), Vector3.new(0, -20, 0), Params)
+    return Result ~= nil
+end
+
+local function IsATMAvailable(atm)
+    for _, obj in next, ModuleATM.class.objects do
+        if obj.instance == atm then
+            local disabled = obj.states.disabled.get()
+            local hacker = obj.states.hacker.get()
+            if disabled == true then return false end
+            if hacker and hacker ~= Client then return false end
+            local lastHacked = _atmLastHacked[atm]
+            if lastHacked and (tick() - lastHacked) < ATM_COOLDOWN_SECS then return false end
+            return true
+        end
+    end
+    return false
+end
+
+local function ClearATMEsp()
+    for _, entry in pairs(_espAtmParts) do
+        for _, line in ipairs(entry.lines) do
+            pcall(function() line:Remove() end)
+        end
+    end
+    _espAtmParts = {}
+end
+
+local function GetATMCFrameAndSize(atm)
+    for _, v in pairs(atm:GetDescendants()) do
+        if v:IsA("MeshPart") then
+            return v.CFrame, v.Size
+        end
+    end
+    local area = atm:FindFirstChild("Area")
+    if area and area:IsA("BasePart") then
+        return area.CFrame, Vector3.new(1.5, 2.5, 0.8)
+    end
+    if atm:IsA("Model") then
+        local ok, cf, s = pcall(function() return atm:GetBoundingBox() end)
+        if ok then return cf, s end
+    end
+    return atm.CFrame, Vector3.new(1.5, 2.5, 0.8)
+end
+
+local function NewATMBox(color)
+    local lines = {}
+    for i = 1, 12 do
+        local ok, line = pcall(function()
+            local l = Drawing.new("Line")
+            l.Color = color
+            l.Thickness = 1.5
+            l.Visible = false
+            return l
+        end)
+        if ok then table.insert(lines, line) end
+    end
+    return lines
+end
+
+RunService.RenderStepped:Connect(function()
+    pcall(function()
+        local Camera = workspace.CurrentCamera
+        if not Camera then return end
+        if not _espAtmEnabled then
+            for _, entry in pairs(_espAtmParts) do
+                for _, line in ipairs(entry.lines) do
+                    line.Visible = false
+                end
+            end
+            return
+        end
+        for _, obj in next, ModuleATM.class.objects do
+            local atm = obj.instance
+            if not atm then continue end
+            local available = IsATMAvailable(atm)
+            local color = available and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
+            if not _espAtmParts[atm] then
+                _espAtmParts[atm] = { lines = NewATMBox(color) }
+            end
+            local entry = _espAtmParts[atm]
+            local cf, size = GetATMCFrameAndSize(atm)
+            if not cf then
+                for _, line in ipairs(entry.lines) do line.Visible = false end
+                continue
+            end
+            local x, y, z = size.X / 2, size.Y / 2, size.Z / 2
+            local corners3D = {
+                cf * Vector3.new(x, y, z),
+                cf * Vector3.new(-x, y, z),
+                cf * Vector3.new(-x, y, -z),
+                cf * Vector3.new(x, y, -z),
+                cf * Vector3.new(x, -y, z),
+                cf * Vector3.new(-x, -y, z),
+                cf * Vector3.new(-x, -y, -z),
+                cf * Vector3.new(x, -y, -z),
+            }
+            local pts = {}
+            local anyOnScreen = false
+            for i, pos in ipairs(corners3D) do
+                local screen, onScreen = Camera:WorldToViewportPoint(pos)
+                pts[i] = Vector2.new(screen.X, screen.Y)
+                if onScreen then anyOnScreen = true end
+            end
+            for i, edge in ipairs(EDGES) do
+                local line = entry.lines[i]
+                line.Color = color
+                if anyOnScreen then
+                    line.From = pts[edge[1]]
+                    line.To = pts[edge[2]]
+                    line.Visible = true
+                else
+                    line.Visible = false
+                end
+            end
+        end
+    end)
+end)
+
+local function IsForceFont(atm)
+    local pos = atm:GetPivot().Position
+    for _, v in ipairs(ATM_FORCE_FRONT_POS) do
+        if (pos - v).Magnitude < 10 then return true end
+    end
+    return false
+end
+
+local function GetATMFrontPos(atm)
+    local pivot = atm:GetPivot()
+    local area = atm:FindFirstChild("Area")
+    local basePos = area and area.Position or pivot.Position
+    local frontOffset = ATM_FRONT_OFFSET
+    local atmPos = atm:GetPivot().Position
+    local isForceRight = false
+    for _, v in ipairs(ATM_FORCE_RIGHT_POS) do
+        if (atmPos - v).Magnitude < 10 then
+            isForceRight = true
+            break
+        end
+    end
+    if isForceRight then
+        local frontPos = basePos + pivot.LookVector * -9
+        return Vector3.new(frontPos.X, basePos.Y, frontPos.Z)
+    end
+    local isBack = not IsForceFont(atm) and IsBackATM(atm)
+    local offset = isBack and ATM_BACK_OFFSET or frontOffset
+    local frontPos = basePos + pivot.RightVector * -offset
+    if isBack then
+        local dirToBase = (basePos - frontPos)
+        if dirToBase.Magnitude > 0 then
+            frontPos = frontPos + dirToBase.Unit * 1.5
+        end
+    end
+    return Vector3.new(frontPos.X, basePos.Y, frontPos.Z)
+end
+
+local function FindBestATM()
+    local best, bestDist = nil, math.huge
+    for _, obj in next, ModuleATM.class.objects do
+        local atm = obj.instance
+        if not atm then continue end
+        if not IsATMAvailable(atm) then continue end
+        local atmPos = atm:GetPivot().Position
+        local d = (Root.Position - atmPos).Magnitude
+        if d < bestDist then
+            best = atm
+            bestDist = d
+        end
+    end
+    return best, bestDist
+end
+
+local function CheckingIsHacking()
+    local ok, result = pcall(function()
+        local gui = Client.PlayerGui:FindFirstChild("SliderMinigame")
+        if not gui then return false end
+        for _, v in pairs(gui:GetChildren()) do
+            if v:IsA("GuiObject") and v.Visible then return true end
+        end
+        return false
+    end)
+    return ok and result or false
+end
+
+-- ========== MINIGAME AUTO PLAYER (ระบบ Auto-Win จากสคริปต์ Farm) ==========
+local SliderMinigame, SliderConstants
+pcall(function()
+    SliderMinigame = require(ReplicatedStorage.Modules.Game.Minigames.SliderMinigame)
+    SliderConstants = require(ReplicatedStorage.Modules.Game.Minigames.SliderConstants)
+end)
+
+getgenv().SliderSession = { id = nil, kind = nil, version = nil, active = false, opens = 0, results = 0, lastResult = nil }
+local _sliderLastClick = 0
+local _sliderSendRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Send")
+
+_sliderSendRemote.OnClientEvent:Connect(function(name, a1, a2, a3, a4, a5, a6, a7, a8)
+    local S = getgenv().SliderSession
+    if name == "minigame_open" then
+        S.id = a1
+        S.kind = a2
+        S.version = a8
+        S.active = true
+        S.opens = (S.opens or 0) + 1
+        _sliderLastClick = 0
+    elseif name == "minigame_level" then
+        if S.id == a1 then
+            _sliderLastClick = 0
+            pcall(function()
+                SliderMinigame.level.set(a2)
+                SliderMinigame.target_pos.set(a3)
+                SliderMinigame.target_size.set(a4)
+                SliderMinigame.tries.set(a5)
+            end)
+        end
+    elseif name == "minigame_result" then
+        S.results = (S.results or 0) + 1
+        S.lastResult = a2
+        if S.id == a1 then
+            S.id = nil
+            S.active = false
+        end
+    end
+end)
+
+local _sliderConn = nil
+local function SliderInTarget(n)
+    local tp = SliderMinigame.target_pos.get()
+    local ts = SliderMinigame.target_size.get()
+    local len = (SliderConstants and SliderConstants.LENIENCE) or 0.05
+    if not tp or tp == 0 then return false end
+    local h = ts / 2
+    return n >= tp - h - len and n <= tp + h + len
+end
+
+local function SliderFire()
+    local s = getgenv().SliderSession
+    if not s or not s.id or not s.active then return end
+    if os.clock() - _sliderLastClick < 0.15 then return end
+    local lvl = SliderMinigame.level.get()
+    local pos = SliderMinigame.needle_pos.get()
+    local t = workspace:GetServerTimeNow()
+    pcall(function() Net.send("minigame_click", s.id, lvl, pos, t, s.version or 1) end)
+    _sliderLastClick = os.clock()
+end
+
+local function StartSliderAW()
+    if _sliderConn or not SliderMinigame then return end
+    _sliderConn = RunService.Heartbeat:Connect(function()
+        if not _G.AutoMinigameEnabled then return end
+        local s = getgenv().SliderSession
+        if not s or not s.active then return end
+        if SliderMinigame.level.get() == 0 then return end
+        if SliderInTarget(SliderMinigame.needle_pos.get()) then SliderFire() end
+    end)
+end
+
+local function StopSliderAW()
+    if _sliderConn then _sliderConn:Disconnect() _sliderConn = nil end
+end
+
+pcall(function()
+    SliderMinigame.enabled.hook(function(v)
+        if v then StartSliderAW() else StopSliderAW() end
+    end)
+end)
+StartSliderAW()
+
+-- รอจนมินิเกมจบ (Auto-Win ทำงานเองใน Heartbeat) คืนค่า true ถ้าจบแล้ว
+local function AutoPlayATMMinigame(timeout)
+    timeout = timeout or 6
+    local startT = tick()
+    while (tick() - startT) < timeout do
+        if not CheckingIsHacking() then return true end
+        task.wait(0.03)
+    end
+    return not CheckingIsHacking()
+end
+-- ========== END MINIGAME AUTO PLAYER ==========
+
+print("[AB] Step 12: Minigame loaded")
+
+local function DoHackATM(self, closestATM, vehicle, hackToolClass)
+    local restored = false
+    local playerRestored = false
+    local hackSucceeded = false
+    local function safeRestore()
+        if not restored and vehicle and vehicle.PrimaryPart then
+            RestoreVehicle(vehicle)
+            restored = true
+        end
+    end
+    local function safeRestorePlayer()
+        if not playerRestored then
+            RestorePlayer()
+            playerRestored = true
+        end
+    end
+    repeat
+        if not Flags.AutoATM or not self:IsAlive() then
+            safeRestore() safeRestorePlayer() break
+        end
+        if IsDownedPaused then
+            safeRestore() safeRestorePlayer() break
+        end
+        if Humanoid and Humanoid:GetAttribute("IsDead") then
+            safeRestore() safeRestorePlayer() break
+        end
+        if self:Detected() then
+            _G.StopDriving = true
+            ATM_STATE = "IDLE"
+            safeRestore()
+            safeRestorePlayer()
+            return hackSucceeded
+        end
+        if not IsATMAvailable(closestATM) then
+            safeRestore() safeRestorePlayer() break
+        end
+        if not CheckingIsHacking() then
+            if not IsATMAvailable(closestATM) then
+                safeRestore() safeRestorePlayer() break
+            end
+            if string.lower(_G.VehicleType) == "car" then
+                task.wait(0.09)
+            end
+            self[2].Send("request_begin_hacking_3", closestATM, hackToolClass)
+            local waitOpen = tick()
+            repeat
+                task.wait(0.03)
+                if IsDownedPaused then
+                    safeRestore() safeRestorePlayer()
+                    return hackSucceeded
+                end
+            until CheckingIsHacking() or tick() - waitOpen > 2
+            if not CheckingIsHacking() then
+                safeRestore()
+                safeRestorePlayer()
+                ATM_STATE = "FIND_ATM"
+                return hackSucceeded
+            end
+        end
+
+        task.wait(0.1)
+        local played = AutoPlayATMMinigame(8)
+
+        if played and not CheckingIsHacking() then
+            hackSucceeded = true
+        else
+            if CheckingIsHacking() then
+                task.wait(1.13)
+                if CheckingIsHacking() then
+                    self[2].Send("atm_win_3", closestATM)
+                end
+                hackSucceeded = true
+            else
+                hackSucceeded = true
+            end
+        end
+
+        safeRestore()
+        safeRestorePlayer()
+        local waitClose = tick()
+        repeat
+            task.wait(0.03)
+            if IsDownedPaused then return hackSucceeded end
+        until not CheckingIsHacking() or tick() - waitClose > 2
+    until not IsATMAvailable(closestATM) or not Flags.AutoATM or IsDownedPaused
+    safeRestore()
+    safeRestorePlayer()
+    return hackSucceeded
+end
+
+local function MountAndExitIfNeeded(self, vehicle, atm)
+   if not Flags.AutoATM or not self:IsAlive() then return end
+   if not vehicle or not vehicle.PrimaryPart then return end
+   task.wait(0.05)
+   if not Humanoid.Sit then
+       if not TryMountVehicle(vehicle) then
+           local frontPos = (Root.CFrame * CFrame.new(0, 0, -4)).Position
+           vehicle:SetPrimaryPartCFrame(CFrame.new(frontPos))
+           vehicle.PrimaryPart.AssemblyLinearVelocity = Vector3.zero
+           vehicle.PrimaryPart.AssemblyAngularVelocity = Vector3.zero
+           task.wait(0.4)
+           TryMountVehicle(vehicle)
+       end
+   end
+end
+
+local function EnsureVehicleLocked(self, vehicle)
+    if not vehicle then return end
+    local isLocked = vehicle:GetAttribute("IsLocked")
+    if not isLocked then
+        self[2].Send("lock_vehicle", vehicle, true)
+    end
+end
+
+local _cachedData = nil
+local function GetQuantumConsumedAmount()
+    if not _cachedData then
+        local ok, d = pcall(require, game.ReplicatedStorage.Modules.Core.Data)
+        if ok then _cachedData = d end
+    end
+    if not _cachedData then return 0 end
+    local stockData = _cachedData.stock_times["HackToolQuantum"]
+    if not stockData then return 0 end
+    return stockData.amount or 0
+end
+
+local function IsQuantumInStock()
+    return GetQuantumConsumedAmount() > 0
+end
+
+function ModuleService:AutoATM()
+  if not Flags.AutoATM then ATM_STATE = "IDLE" return end
+  if not self:IsAlive() then task.wait(3) return end
+  if IsDownedPaused then task.wait(1) return end
+  if Humanoid and Humanoid:GetAttribute("IsDead") then task.wait(3) return end
+  if self:Detected() then
+      _G.StopDriving = true
+      ATM_STATE = "IDLE"
+      task.wait(2)
+      return
+  end
+
+  if Flags.AutoSteak and _G._steakPausedByATM then
+      Flags.AutoSteak = false
+      _G._steakPausedByATM = false
+      SteakState = "INIT"
+  end
+
+  local totalLevel = Client:GetAttribute("level") or 0
+  local hand = HandMoney()
+  local bank = ATMMoney() or 0
+  local hasVehicle = GetVehicleItemFromInventory()[2]
+
+  if totalLevel < 10 then
+      if not Flags.AutoSteak then
+          Flags.AutoSteak = true
+          _G._steakPausedByATM = true
+          SteakState = "INIT"
+      end
+      self:SteakHouse()
+      return
+  end
+
+  if not hasVehicle and hand + bank < BMX_PRICE then
+      if not Flags.AutoSteak then
+          Flags.AutoSteak = true
+          _G._steakPausedByATM = true
+          SteakState = "INIT"
+      end
+      self:SteakHouse()
+      return
+  end
+
+  if not hasVehicle and bank >= (BMX_PRICE - hand) then
+      local currentHand = HandMoney()
+      if currentHand < BMX_PRICE then
+          local atmForWd, _ = GetBestATM()
+          if atmForWd then
+              local atmStandPos = GetATMStandPos(atmForWd)
+              if (Root.Position - atmStandPos).Magnitude > ATM_INTERACT_DIST then
+                  self:Teleport({ CFrame = CFrame.new(atmStandPos) })
+                  task.wait(0.5)
+              end
+              if not IsATMDisabled(atmForWd) then
+                  self[2].Get("transfer_funds", "bank", "hand", BMX_PRICE - currentHand)
+                  task.wait(0.5)
+              end
+          end
+          return
+      end
+  end
+
+  if not hasVehicle then
+      ATM_STATE = "BUY_VEHICLE"
+      if hand < BMX_PRICE then
+          self[2].Get("transfer_funds", "bank", "hand", BMX_PRICE - hand)
+          task.wait(0.05)
+          return
+      end
+      local shopPos, crate = GetBMXShopPos()
+      if not shopPos then return end
+      if self:Dist(shopPos) > 6 then
+          self:Teleport({ CFrame = CFrame.new(shopPos) })
+          task.wait(1)
+          return
+      end
+      local crateOptions = crate:WaitForChild("CrateOptions", 10)
+      local basicOption = crateOptions and crateOptions:WaitForChild("Basic", 10)
+      if not basicOption then return end
+      self[2].Get("open_crate", basicOption, "money")
+      task.wait(2)
+      self:Teleport({ CFrame = CFrame.new(253.70, 255.21, -202.66) })
+      task.wait(1)
+      return
+  end
+
+  ATM_STATE = "ENSURE_VEHICLE"
+
+  if ATM_STATE == "ENSURE_VEHICLE" then
+      if not Humanoid.Sit then
+          if _standingStart == nil then
+              _standingStart = tick()
+          elseif tick() - _standingStart > 300 then
+              TeleportService:Teleport(game.PlaceId, Client)
+              return
+          end
+      else
+          _standingStart = nil
+      end
+  else
+      _standingStart = nil
+  end
+
+  local vehicleData = nil
+  local itemInfo = GetVehicleItemFromInventory()
+  if itemInfo[2] then
+      pcall(function()
+          local ItemUtils = require(game.ReplicatedStorage.Modules.Game.Inventory.ItemUtils)
+          vehicleData = ItemUtils.get_item_info(CoreData, itemInfo[3])
+      end)
+  end
+
+  if vehicleData and (vehicleData.destroyed or (vehicleData.health ~= nil and vehicleData.health <= 0)) then
+      if IsDownedPaused then return end
+      RepairVehicleByGuid(self, itemInfo[3])
+      return
+  end
+
+  local vehicle = EnsureOnVehicle(self)
+  if not vehicle then
+      task.wait(2)
+      return
+  end
+
+  EnsureVehicleLocked(self, vehicle)
+
+  if vehicleData and GetVehicleHPPercent(vehicle) <= VEHICLE_REPAIR_THRESHOLD then
+      if Humanoid.Sit then
+          DismountVehicle(self, vehicle)
+          task.wait(0.3)
+      end
+      RepairVehicle(self, vehicle)
+      return
+  end
+
+  local HACK_TOOL_PRIORITY = {
+      "HackToolBasic",
+      "HackToolPro",
+      "HackToolUltimate",
+      "HackToolQuantum",
+  }
+
+  local activeHackTool = _G.HackToolClass
+  if activeHackTool == "Automatic" then
+      local swiper = self:Get_Skill_Level("Swiper")
+      if swiper >= 90 then
+          if IsQuantumInStock() then
+              activeHackTool = "HackToolQuantum"
+          else
+              activeHackTool = "HackToolUltimate"
+          end
+      elseif swiper >= 50 then
+          activeHackTool = "HackToolUltimate"
+      elseif swiper >= 12 then
+          activeHackTool = "HackToolPro"
+      else
+          activeHackTool = "HackToolBasic"
+      end
+  end
+
+  local hasHack = GetInfo(activeHackTool)[2]
+  if not hasHack then
+      for _, tier in ipairs(HACK_TOOL_PRIORITY) do
+          if tier == activeHackTool then break end
+          if GetInfo(tier)[2] then
+              activeHackTool = tier
+              hasHack = true
+              break
+          end
+      end
+  end
+
+  if not hasHack then
+      ATM_STATE = "BUY_HACKTOOL"
+      local hand2 = HandMoney()
+      local bank2 = ATMMoney() or 0
+      local totalMoney = hand2 + bank2
+
+      local targetTool = activeHackTool
+      local priceEach = GetChipPrice(targetTool)
+
+      if totalMoney < priceEach then
+          local fallbackTool = nil
+          for _, tier in ipairs(HACK_TOOL_PRIORITY) do
+              if tier == activeHackTool then break end
+              local tierPrice = GetChipPrice(tier)
+              if totalMoney >= tierPrice and not GetInfo(tier)[2] then
+                  fallbackTool = tier
+              end
+          end
+
+          if not fallbackTool then
+              if not Flags.AutoSteak then
+                  Flags.AutoSteak = true
+                  _G._steakPausedByATM = true
+                  SteakState = "INIT"
+              end
+              self:SteakHouse()
+              return
+          end
+
+          targetTool = fallbackTool
+          priceEach = GetChipPrice(targetTool)
+      end
+
+      local affordAmount = math.floor(totalMoney / priceEach)
+      local buyAmount = math.max(1, math.min(_G.HackToolAmount, affordAmount))
+      local needMoney = priceEach * buyAmount
+
+      if hand2 < needMoney then
+          if IsDownedPaused then return end
+          local need = needMoney - hand2
+          local atmForWd, _ = FindBestATM()
+          if not atmForWd then task.wait(2) return end
+          local atmPos = GetATMFrontPos(atmForWd)
+          local arrivedAtmForWd = atmForWd
+
+          if (Root.Position - atmPos).Magnitude > ATM_ARRIVE_DIST then
+              local rerouteThread = task.spawn(function()
+                  while not _G.StopDriving do
+                      task.wait(0.5)
+                      if IsDownedPaused then
+                          _G.StopDriving = true
+                          break
+                      end
+                      if not IsATMAvailable(atmForWd) then
+                          _G.StopDriving = true
+                          break
+                      end
+                      local newATM, newDist = FindBestATM()
+                      if newATM and newATM ~= atmForWd then
+                          local curDist = (Root.Position - GetATMFrontPos(atmForWd)).Magnitude
+                          if newDist < curDist - 25 then
+                              atmForWd = newATM
+                              atmPos = GetATMFrontPos(atmForWd)
+                              arrivedAtmForWd = atmForWd
+                              _G.StopDriving = true
+                              break
+                          end
+                      end
+                  end
+              end)
+
+              local arrived = Driveto(self, vehicle, atmPos)
+              task.cancel(rerouteThread)
+              task.wait(0.1)
+              if not arrived then task.wait(1) return end
+          end
+
+          if IsDownedPaused then return end
+          if self:Detected() then
+              _G.StopDriving = true
+              ATM_STATE = "IDLE"
+              task.wait(0.5) return
+          end
+
+          if not IsATMAvailable(atmForWd) then
+              task.wait(1) return
+          end
+
+          local distToATM = (Root.Position - atmPos).Magnitude
+          if distToATM > ATM_ARRIVE_DIST + 3 then
+              Root:PivotTo(CFrame.new(atmPos))
+              task.wait(0.1)
+          end
+          _G.StopDriving = true
+          task.wait(0.05)
+          DisableVehicleCollision(vehicle)
+          task.wait(0.01)
+          if not DismountVehicle(self, vehicle) then
+              RestoreVehicleCollision(vehicle)
+              task.wait(1) return
+          end
+          RestoreVehicleCollision(vehicle)
+          task.wait(0.1)
+          if IsDownedPaused then return end
+
+          local atmForWdFinal, _ = FindBestATM()
+          if not atmForWdFinal then task.wait(1) return end
+
+          self[2].Get("transfer_funds", "bank", "hand", need)
+          task.wait(0.3)
+
+          local wdExitPos = GetATMExitPos(arrivedAtmForWd)
+          local frontPos = (Root.CFrame * CFrame.new(0, 0, -3)).Position
+          local groundParams = RaycastParams.new()
+          groundParams.FilterType = Enum.RaycastFilterType.Exclude
+          groundParams.FilterDescendantsInstances = { vehicle }
+          local groundRay = workspace:Raycast(
+              Vector3.new(frontPos.X, 500, frontPos.Z),
+              Vector3.new(0, -600, 0),
+              groundParams
+          )
+          local safeY = groundRay and (groundRay.Position.Y + 1.5) or Root.Position.Y
+          vehicle:SetPrimaryPartCFrame(CFrame.new(frontPos.X, safeY, frontPos.Z))
+          vehicle.PrimaryPart.AssemblyLinearVelocity = Vector3.zero
+          vehicle.PrimaryPart.AssemblyAngularVelocity = Vector3.zero
+          task.wait(0.3)
+          TryMountVehicle(vehicle)
+          task.wait(0.3)
+          local waitMount = 0
+          while not Humanoid.Sit and waitMount < 10 do
+              task.wait(0.3)
+              waitMount = waitMount + 1
+          end
+          if not Humanoid.Sit then
+              task.wait(1) return
+          end
+          if IsDownedPaused then return end
+          if self:Detected() then
+              _G.StopDriving = true
+              ATM_STATE = "BUY_HACKTOOL"
+              task.wait(0.5) return
+          end
+
+          if wdExitPos then
+              Driveto(self, vehicle, wdExitPos)
+              task.wait(0.3)
+          end
+      end
+
+      if IsDownedPaused then return end
+      local handNow = HandMoney()
+      if handNow < needMoney then
+          task.wait(1) return
+      end
+
+      if targetTool == "HackToolQuantum" then
+          local nightclubPos = Vector3.new(1162.9755859375, 255.1786346435547, -344.2020568847656)
+          if (Root.Position - nightclubPos).Magnitude > 5 then
+              local arrived = Driveto(self, vehicle, nightclubPos)
+              task.wait(0.3)
+              if not arrived then task.wait(1) return end
+          end
+          if IsDownedPaused then return end
+          if self:Detected() then
+              _G.StopDriving = true
+              ATM_STATE = "BUY_HACKTOOL"
+              task.wait(0.5) return
+          end
+          local shopZone = workspace:FindFirstChild("ShopZone_IllegalNightclub")
+          if not shopZone then task.wait(2) return end
+          for i = 1, buyAmount do
+              task.spawn(function()
+                  self[2].Get("purchase_consumable", shopZone, targetTool)
+              end)
+          end
+      else
+          local alleyFallback = Vector3.new(-212.181717, 255.525162, 387.744324)
+          local alleyTarget = alleyFallback
+          local alleyGuy = workspace.Map.NPCs:FindFirstChild("AlleyWayGuy")
+          if alleyGuy then
+              if alleyGuy.PrimaryPart then
+                  alleyTarget = alleyGuy.PrimaryPart.Position
+              elseif alleyGuy:FindFirstChildWhichIsA("BasePart") then
+                  alleyTarget = alleyGuy:FindFirstChildWhichIsA("BasePart").Position
+              end
+          end
+          if (Root.Position - alleyTarget).Magnitude > 20 then
+              local arrived = Driveto(self, vehicle, alleyTarget)
+              task.wait(0.3)
+              if not arrived then task.wait(1) return end
+          end
+          if IsDownedPaused then return end
+          if self:Detected() then
+              _G.StopDriving = true
+              ATM_STATE = "BUY_HACKTOOL"
+              task.wait(0.5) return
+          end
+          local shopZone = workspace:FindFirstChild("ShopZone_Illegal")
+          if not shopZone then task.wait(2) return end
+          for i = 1, buyAmount do
+              task.spawn(function()
+                  self[2].Get("purchase_consumable", shopZone, targetTool)
+              end)
+          end
+      end
+
+      task.wait(0.5)
+      return
+  end
+
+  ATM_STATE = "FIND_ATM"
+  local closestATM, shortestDist = FindBestATM()
+  if not closestATM then
+      task.wait(5) return
+  end
+
+  local atmFrontPos = GetATMFrontPos(closestATM)
+  local isBack = not IsForceFont(closestATM) and IsBackATM(closestATM)
+  local arriveThreshold = isBack and 0.5 or ATM_ARRIVE_DIST
+
+  if shortestDist > arriveThreshold then
+      ATM_STATE = "DRIVE_TO_ATM"
+
+      local driveTask = task.spawn(function()
+          while ATM_STATE == "DRIVE_TO_ATM" do
+              task.wait(0.5)
+              if IsDownedPaused then _G.StopDriving = true break end
+              if not IsATMAvailable(closestATM) then _G.StopDriving = true end
+              if self:Detected() then _G.StopDriving = true end
+              local newATM, newDist = FindBestATM()
+              if newATM and newATM ~= closestATM then
+                  local currentDist = (Root.Position - GetATMFrontPos(closestATM)).Magnitude
+                  if newDist < currentDist - 25 then
+                      closestATM = newATM
+                      _G.StopDriving = true
+                  end
+              end
+          end
+      end)
+
+      local earlyDismount = false
+      local earlyThread = task.spawn(function()
+          while ATM_STATE == "DRIVE_TO_ATM" do
+              task.wait(0.1)
+              if string.lower(_G.VehicleType) == "car" then
+                  local checkPos = (vehicle and vehicle.PrimaryPart)
+                      and vehicle.PrimaryPart.Position
+                      or Root.Position
+                  if (checkPos - atmFrontPos).Magnitude <= ATM_EARLY_DISMOUNT_DIST then
+                      _G.StopDriving = true
+                      earlyDismount = true
+                      break
+                  end
+              end
+          end
+      end)
+
+      Driveto(self, vehicle, atmFrontPos)
+      task.cancel(earlyThread)
+      task.cancel(driveTask)
+      task.wait(0.1)
+
+      if IsDownedPaused then return end
+
+      local arrived = earlyDismount
+          or (Root.Position - atmFrontPos).Magnitude <= ATM_ARRIVE_DIST + 5
+
+      if not arrived then
+          if self:Detected() then
+              _G.StopDriving = true
+              ATM_STATE = "IDLE"
+              task.wait(0.5)
+          else
+              ATM_STATE = "FIND_ATM"
+              task.wait(1)
+          end
+          return
+      end
+
+      if self:Detected() then
+          _G.StopDriving = true
+          ATM_STATE = "IDLE"
+          task.wait(0.5)
+          return
+      end
+
+      if not IsATMAvailable(closestATM) then return end
+  end
+
+  if IsDownedPaused then return end
+
+  if vehicle and vehicle.PrimaryPart then
+      vehicle.PrimaryPart.AssemblyLinearVelocity = Vector3.zero
+      vehicle.PrimaryPart.AssemblyAngularVelocity = Vector3.zero
+  end
+
+  ATM_STATE = "ARRIVED_ATM"
+
+  if IsDownedPaused then return end
+
+  if vehicle and vehicle.PrimaryPart then
+      DisableVehicleCollision(vehicle)
+  end
+
+  if not DismountVehicle(self, vehicle) then
+      if vehicle and vehicle.PrimaryPart then RestoreVehicleCollision(vehicle) end
+      task.wait(1) return
+  end
+
+  if vehicle and vehicle.PrimaryPart then
+      SuspendVehicle(vehicle, 25)
+  end
+
+  if vehicle and vehicle.PrimaryPart then
+      RestoreVehicleCollision(vehicle)
+  end
+
+  local distAfterDismount = (Root.Position - atmFrontPos).Magnitude
+  if distAfterDismount > 2.5 then
+      Root:PivotTo(CFrame.new(atmFrontPos))
+      task.wait(0.1)
+  end
+
+  if isBack then
+      local atmPos = closestATM:GetPivot().Position
+      local dir = Vector3.new(atmPos.X - Root.Position.X, 0, atmPos.Z - Root.Position.Z)
+      if dir.Magnitude > 0.1 then
+          Root:PivotTo(CFrame.new(Root.Position, Root.Position - dir.Unit))
+      end
+      task.wait(0.05)
+  end
+
+  task.wait(0.01)
+  SuspendPlayer(0)
+
+  if ShouldDeposit() then
+      self[2].Get("transfer_funds", "hand", "bank", CoreData.money.hand)
+      task.wait(0.2)
+  end
+
+  if not IsATMAvailable(closestATM) then
+      if vehicle and vehicle.PrimaryPart then RestoreVehicle(vehicle) end
+      RestorePlayer()
+      return
+  end
+
+  ATM_STATE = "HACKING"
+  local hackSucceeded = DoHackATM(self, closestATM, vehicle, activeHackTool)
+
+  if hackSucceeded then
+      _atmLastHacked[closestATM] = tick()
+  end
+
+  task.wait(0.3)
+
+  if self:Detected() then
+      _G.StopDriving = true
+      ATM_STATE = "FIND_ATM"
+      task.wait(0.5)
+      return
+  end
+
+  local waitDone = tick()
+  repeat task.wait(0.03) until not CheckingIsHacking() or tick() - waitDone > 2
+  task.wait(0.2)
+
+  ATM_STATE = "FIND_ATM"
+
+  local exitPos = GetATMExitPos(closestATM)
+  if exitPos then
+      MountAndExitIfNeeded(self, vehicle, closestATM)
+      task.wait(0.3)
+      local currentVehicle = GetMyVehicle()
+      if currentVehicle and Humanoid.Sit then
+          Driveto(self, currentVehicle, exitPos)
+          task.wait(0.3)
+      end
+  else
+      MountAndExitIfNeeded(self, vehicle, closestATM)
+   end
+end
+
+print("[AB] Step 13: ATM loaded")
+
+-- ============================================================
+-- Melee Aura
+-- ============================================================
+local function StopMeleeAura()
+    _G.MeleeAura = false
+end
+
+local function StartMeleeAura(self)
+    if _meleeAuraThread then return end
+    _meleeAuraThread = task.spawn(function()
+        repeat task.wait(0.1) until BypassReady
+        while _G.MeleeAura do
+            pcall(function()
+                if IsDownedPaused then task.wait(0.5) return end
+                if not Char or not Root then task.wait(0.5) return end
+                if Flags.AutoSteak then
+                    local bar = GetProgressBar()
+                    if not bar or not bar.Visible then task.wait(0.5) return end
+                end
+                if Flags.AutoQuick11 then
+                    if not _G.IsStocking then
+                        local fist = Char:FindFirstChild("Fists")
+                        if fist then
+                            Humanoid:UnequipTools()
+                        end
+                        task.wait(0.5)
+                        return
+                    end
+                end
+                local boxTool = Char:FindFirstChild("BoxTool") or Client.Backpack:FindFirstChild("BoxTool")
+                local isFetchingBox = Flags.AutoQuick11 and not boxTool
+                if isFetchingBox then task.wait(0.5) return end
+                for _, player in pairs(game.Players:GetPlayers()) do
+                    if player ~= Client then
+                        local char = player.Character
+                        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                        local hum = char and char:FindFirstChild("Humanoid")
+                        if hrp and hum and hum.Health > 0 then
+                            local dist = (Root.Position - hrp.Position).Magnitude
+                            if dist <= (_G.MeleeAuraRange or 15) then
+                                if Flags.AutoJanitor then
+                                    local mop = Char:FindFirstChild("Mop")
+                                        or Char:FindFirstChild("Bronze Mop")
+                                        or Char:FindFirstChild("Silver Mop")
+                                        or Char:FindFirstChild("Gold Mop")
+                                        or Char:FindFirstChild("Diamond Mop")
+                                    if mop then
+                                        self[2].Send("melee_attack", mop, {player}, hrp.CFrame, 0)
+                                    end
+                                elseif Flags.AutoQuick11 then
+                                    local fist = Char:FindFirstChild("Fists") or Client.Backpack:FindFirstChild("Fists")
+                                    if fist then
+                                        if fist.Parent ~= Char then
+                                            Humanoid:EquipTool(fist)
+                                            task.wait(0.1)
+                                        end
+                                        self[2].Send("melee_attack", fist, {player}, hrp.CFrame, 0)
+                                    end
+                                else
+                                    local fist = Char:FindFirstChild("Fists") or Client.Backpack:FindFirstChild("Fists")
+                                    if fist then
+                                        if fist.Parent ~= Char then
+                                            Humanoid:EquipTool(fist)
+                                            task.wait(0.1)
+                                        end
+                                        self[2].Send("melee_attack", fist, {player}, hrp.CFrame, 0)
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end)
+            task.wait(0.3)
+        end
+        _meleeAuraThread = nil
+    end)
+end
+
+local InstanceService = ModuleService.new()
+InstanceService:Thread()
+
+-- Auto Minigame: ใช้ระบบ Auto-Win จาก Farm (ทำงานต่อเนื่องใน Heartbeat ไม่ต้องมี loop 4 วิ)
+
+-- ============================================================
+-- Safe Height
+-- ============================================================
+local SafeHeight = {
+    Emergency = nil,
+    MinCharacter = nil,
+    RespawnHeight = nil,
+}
+
+function InitSafeHeight()
+    local hrp = Root or (Char and Char:FindFirstChild("HumanoidRootPart"))
+    if not hrp then return false end
+    local ray = workspace:Raycast(
+        Vector3.new(hrp.Position.X, 500, hrp.Position.Z),
+        Vector3.new(0, -600, 0)
+    )
+    local groundY = ray and ray.Position.Y or hrp.Position.Y
+    SafeHeight.RespawnHeight = groundY + 5
+    SafeHeight.MinCharacter = groundY - 30
+    SafeHeight.Emergency = groundY - 80
+    return true
+end
+
+task.spawn(function()
+    repeat task.wait(0.5) until InitSafeHeight()
+end)
+
+Client.CharacterAdded:Connect(function(newChar)
+    Char = newChar
+    Humanoid = newChar:WaitForChild("Humanoid")
+    Root = newChar:WaitForChild("HumanoidRootPart")
+    task.spawn(function()
+        task.wait(1)
+        pcall(InitSafeHeight)
+    end)
+end)
+
+task.spawn(function()
+    while task.wait() do
+        pcall(function()
+            if not Char or not Root then return end
+            if not Flags.AutoATM then return end
+            if IsDownedPaused then return end
+            if not SafeHeight.Emergency or not SafeHeight.MinCharacter then return end
+            if IsTeleporting then return end
+            if Humanoid and Humanoid.Sit then return end
+            local currentY = Root.Position.Y
+            if currentY < SafeHeight.Emergency then
+                Root.Anchored = true
+                Root.CFrame = CFrame.new(
+                    Root.Position.X,
+                    SafeHeight.RespawnHeight,
+                    Root.Position.Z
+                )
+                Root.AssemblyLinearVelocity = Vector3.zero
+                task.wait(0.1)
+                Root.Anchored = false
+            elseif currentY < SafeHeight.MinCharacter then
+                Root.CFrame = CFrame.new(
+                    Root.Position.X,
+                    SafeHeight.RespawnHeight,
+                    Root.Position.Z
+                )
+                if Root.AssemblyLinearVelocity.Y < -50 then
+                    Root.AssemblyLinearVelocity = Vector3.new(
+                        Root.AssemblyLinearVelocity.X,
+                        0,
+                        Root.AssemblyLinearVelocity.Z
+                    )
+                end
+            end
+        end)
+    end
+end)
+
+task.spawn(function()
+    local ok, err = pcall(function()
+        InstanceService:Bypass()
+    end)
+    if not ok then
+        warn("[Bypass] Failed:", err)
+    else
+        warn("[Bypass] OK - successful!")
+    end
+    BypassReady = true
+    warn("[Bypass] Bypass successfully")
+end)
+
+-- ============================================================
+-- AntiDead
+-- ============================================================
+_G.AntiDeadEnabled = true
+_G.AntiDeadFlickering = false
+_G.AntiDeadBaseCFrame = nil
+_G.AntiDeadDropDepth = -40
+_G.AntiDeadMoveRadius = 5
+_G.AntiDeadFlickerRate = 0.1
+
+local function isDowned()
+   if not Humanoid then return false end
+   return (
+       Humanoid:GetAttribute("HasBeenDowned")
+       or Humanoid:GetAttribute("IsDead")
+       or Humanoid.Health <= 0
+   )
+end
+
+local function getHRP()
+   return Root
+end
+
+local function teleportUnderground()
+   local hrp = getHRP()
+   if not hrp then return end
+   _G.AntiDeadBaseCFrame = hrp.CFrame + Vector3.new(0, _G.AntiDeadDropDepth, 0)
+   hrp.CFrame = _G.AntiDeadBaseCFrame
+end
+
+local function flickerAndMove()
+   if _G.AntiDeadFlickering then return end
+   _G.AntiDeadFlickering = true
+   task.spawn(function()
+       while _G.AntiDeadFlickering and _G.AntiDeadEnabled and isDowned() do
+           local hrp = getHRP()
+           if hrp and _G.AntiDeadBaseCFrame then
+               local angle = math.random() * math.pi * 2
+               local offset = Vector3.new(math.cos(angle), 0, math.sin(angle)) * _G.AntiDeadMoveRadius
+               local randomPos = _G.AntiDeadBaseCFrame.Position + offset
+               hrp.CFrame = CFrame.new(randomPos)
+               task.wait(0.05)
+               hrp.CFrame = _G.AntiDeadBaseCFrame
+           end
+           task.wait(_G.AntiDeadFlickerRate)
+       end
+       _G.AntiDeadFlickering = false
+   end)
+end
+
+local wasDownedLastFrame = false
+local _networkSleepThread = nil
+
+RunService.Heartbeat:Connect(function()
+   if not _G.AntiDeadEnabled then return end
+
+   local downed = isDowned()
+
+   if downed then
+       if not IsDownedPaused then
+           IsDownedPaused = true
+           _G.StopDriving = true
+           IsTeleporting = false
+           if _vehicleFloatThread then
+               task.cancel(_vehicleFloatThread)
+               _vehicleFloatThread = nil
+           end
+           if _hackFloatThread then
+               task.cancel(_hackFloatThread)
+               _hackFloatThread = nil
+           end
+           task.spawn(function()
+               RestorePlayer()
+           end)
+           pcall(function()
+               InstanceService[2].Send("enter_character_creator", Root.CFrame)
+           end)
+           if not _networkSleepThread then
+               _networkSleepThread = task.spawn(function()
+                   while IsDownedPaused and _G.AntiDeadEnabled do
+                       pcall(function()
+                           if Root then
+                               sethiddenproperty(Root, "NetworkIsSleeping", true)
+                               task.wait()
+                               sethiddenproperty(Root, "NetworkIsSleeping", false)
+                           end
+                       end)
+                       task.wait(0.1)
+                   end
+                   _networkSleepThread = nil
+               end)
+           end
+       end
+       local hrp = getHRP()
+       if hrp and not _G.AntiDeadBaseCFrame then
+           teleportUnderground()
+       end
+       flickerAndMove()
+       wasDownedLastFrame = true
+   else
+       if _networkSleepThread then
+           task.cancel(_networkSleepThread)
+           _networkSleepThread = nil
+       end
+       if _G.AntiDeadBaseCFrame then
+           local hrp = getHRP()
+           if hrp then
+               hrp.CFrame = _G.AntiDeadBaseCFrame + Vector3.new(0, -_G.AntiDeadDropDepth, 0)
+           end
+           _G.AntiDeadBaseCFrame = nil
+           _G.AntiDeadFlickering = false
+       end
+       if wasDownedLastFrame and IsDownedPaused then
+           wasDownedLastFrame = false
+           task.spawn(function()
+               task.wait(5)
+               IsDownedPaused = false
+               _G.StopDriving = false
+               pcall(function()
+                   InstanceService[2].Send("leave_character_creator")
+               end)
+           end)
+       end
+   end
+end)
+
+-- ============================================================
+-- Main farm loop
+-- ============================================================
+task.spawn(function()
+   repeat task.wait(0.1) until BypassReady
+   while task.wait(0.3) do
+       if IsDownedPaused then
+           _G.StopDriving = true
+           IsTeleporting = false
+           if Flags.AutoATM then
+               local vehicle = GetMyVehicle()
+               if vehicle and vehicle.PrimaryPart then
+                   RestoreVehicle(vehicle)
+               end
+               RestorePlayer()
+           end
+           repeat task.wait(0.1) until not IsDownedPaused
+           task.wait(0.5)
+           _G.StopDriving = false
+           if Flags.MeleeAura and not _meleeAuraThread then
+               StartMeleeAura(InstanceService)
+           elseif not Flags.MeleeAura and _meleeAuraThread then
+               StopMeleeAura()
+           end
+           continue
+       end
+       if not InstanceService:IsAlive() then
+           task.wait(3) continue
+       end
+       if Flags.AutoATM then
+           if ATM_STATE == "HACKING" then
+               _lastHackTime = tick()
+           end
+           if tick() - _lastHackTime > 300 then
+               _lastHackTime = tick()
+               Net.send("request_respawn")
+           end
+       end
+       local ok, err = pcall(function()
+           if IsDownedPaused then return end
+           if not InstanceService:IsAlive() then return end
+           if Flags.AutoJanitor then
+               InstanceService:BurgePlace()
+           elseif Flags.AutoQuick11 then
+               InstanceService:Quick_11()
+           elseif Flags.AutoSteak then
+               InstanceService:SteakHouse()
+           elseif Flags.AutoATM then
+               InstanceService:AutoATM()
+           end
+       end)
+       if not ok then
+           task.wait(1)
+       end
+       if Flags.MeleeAura and not _meleeAuraThread then
+           StartMeleeAura(InstanceService)
+       elseif not Flags.MeleeAura and _meleeAuraThread then
+           StopMeleeAura()
+       end
+   end
+end)
+
+-- ============================================================
+-- Anti Ragdoll
+-- ============================================================
+local Ragdoll = nil
+local hookRegistered = false
+
+local function SafeGetRagdoll()
+	if Ragdoll then return Ragdoll end
+	local ok, result = pcall(function()
+		return require(game.ReplicatedStorage.Modules.Game.Ragdoll)
+	end)
+	if ok and result then Ragdoll = result end
+	return Ragdoll
+end
+
+_G.AntiRagdollEnabled = true
+local lastRagdollState = false
+
+function _G.SetAntiRagdoll(state)
+	_G.AntiRagdollEnabled = state
+	if not state then
+		pcall(function()
+			local r = SafeGetRagdoll()
+			if r and r.is_ragdolling and r.is_ragdolling.get() then
+				r.is_ragdolling.set(false)
+				Net.send("end_ragdoll_early")
+			end
+		end)
+		lastRagdollState = false
+	end
+end
+
+_G.SetAntiRagdoll(true)
+
+if not hookRegistered then
+	hookRegistered = true
+	pcall(function()
+		Net.hook("apply_ragdoll", function()
+			if _G.AntiRagdollEnabled then
+				pcall(function()
+					local r = SafeGetRagdoll()
+					if r and r.is_ragdolling and r.is_ragdolling.get() then
+						r.is_ragdolling.set(false)
+						Net.send("end_ragdoll_early")
+						lastRagdollState = false
+					end
+				end)
+			end
+		end)
+	end)
+end
+
+RunService.Heartbeat:Connect(function()
+	if not _G.AntiRagdollEnabled then return end
+	local r = SafeGetRagdoll()
+	if not r or not r.is_ragdolling then return end
+	local success, current = pcall(r.is_ragdolling.get)
+	if success then
+		if current and not lastRagdollState then
+			pcall(function()
+				r.is_ragdolling.set(false)
+				Net.send("end_ragdoll_early")
+			end)
+		end
+		lastRagdollState = current
+	end
+end)
+
+LocalPlayer.CharacterAdded:Connect(function(char)
+	task.wait(0.1)
+	Ragdoll = nil
+	SafeGetRagdoll()
+	lastRagdollState = false
+	_G.SetAntiRagdoll(true)
+end)
+
+-- ============================================================
+-- Optimizations
+-- ============================================================
+pcall(function()
+    local Util2 = require(ReplicatedStorage.Modules.Core.Util)
+    if Util2.tween then
+        local old_tween = Util2.tween
+        Util2.tween = function(instance, tweenInfo, properties, ...)
+            if instance:IsA("NumberValue") and properties.Value == 1 and tweenInfo.Time > 0 then
+                tweenInfo = TweenInfo.new(
+                    0,
+                    tweenInfo.EasingStyle,
+                    tweenInfo.EasingDirection,
+                    tweenInfo.RepeatCount,
+                    tweenInfo.Reverses,
+                    tweenInfo.DelayTime
+                )
+            end
+            return old_tween(instance, tweenInfo, properties, ...)
+        end
+    end
+end)
+
+task.spawn(function()
+    pcall(function()
+        local clinic = workspace:WaitForChild("Map", 30)
+            :WaitForChild("Tiles", 30)
+            :WaitForChild("MedicalClinicTIle", 30)
+            :WaitForChild("MedicalClinic", 30)
+        if not clinic then return end
+
+        for _, folder in pairs({ "Exterior", "Interior" }) do
+            local f = clinic:WaitForChild(folder, 10)
+            if not f then continue end
+            for _, v in pairs(f:GetChildren()) do
+                if v.Name == "DoorSystem" then
+                    v:Destroy()
+                end
+            end
+        end
+    end)
+end)
+
+task.spawn(function()
+    task.wait(5)
+    pcall(function()
+        local function waitFor(parent, name, timeout)
+            if not parent then return nil end
+            return parent:WaitForChild(name, timeout or 10)
+        end
+
+        local tiles = waitFor(workspace, "Map", 30)
+        tiles = waitFor(tiles, "Tiles", 30)
+        local shoppingTile = waitFor(tiles, "ShoppingTile", 10)
+        local steakHouse = waitFor(shoppingTile, "SteakHouse", 10)
+        local interior = waitFor(steakHouse, "Interior", 10)
+        local fridge = waitFor(interior, "Fridge", 10)
+
+        if not fridge then return end
+
+        local doorLeft = fridge:FindFirstChild("DoorLeft")
+        if doorLeft then doorLeft:Destroy() end
+
+        local doorRight = fridge:FindFirstChild("DoorRight")
+        if doorRight then doorRight:Destroy() end
+    end)
+end)
+
+local VirtualUser = game:GetService("VirtualUser")
+
+task.spawn(function()
+    LocalPlayer.Idled:Connect(function()
+        VirtualUser:Button2Down(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
+        task.wait(1)
+        VirtualUser:Button2Up(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
+    end)
+end)
+
+print("[AB] Step 14: Optimizations loaded")
+
+-- ============================================================
+-- HideNames
+-- ============================================================
+_G.HideNames = false
+
+local function HideName(char)
+    char = char or LocalPlayer.Character
+    if not char then return end
+    local hrp = char:WaitForChild("HumanoidRootPart", 1)
+    if not hrp then return end
+    local gui = hrp:FindFirstChild("CharacterBillboardGui")
+    if gui then
+        gui.Enabled = not _G.HideNames
+    end
+end
+
+local function OnCharacter(char)
+    task.spawn(function()
+        task.wait(0.2)
+        HideName(char)
+    end)
+end
+
+LocalPlayer.CharacterAdded:Connect(OnCharacter)
+if LocalPlayer.Character then
+    OnCharacter(LocalPlayer.Character)
+end
+
+-- ============================================================
+-- MISC TAB UI
+-- ============================================================
+MiscTab:Section({
+    Title = "Setting MiscTab",
+    Opened = true,
+    CanCollapse = false
+})
+
+MiscTab:Toggle({
+    Flag = "Hidename",
+    Title = "Hide Name",
+    Desc = "Hide player names",
+    Icon = "check",
+    Type = "Checkbox",
+    Value = false,
+    Callback = function(value)
+        _G.HideNames = value
+        HideName()
+    end
+})
+
+local Util = require(game.ReplicatedStorage.Modules.Core.Util)
+local currentHum
+local respawning = false
+_G.AutoRespawn = false
+
+local function tryRespawn()
+    if respawning then return end
+    if not currentHum then return end
+    if not currentHum:GetAttribute("IsDead") then return end
+    if not _G.AutoRespawn then return end
+    respawning = true
+    task.spawn(function()
+        while currentHum
+            and currentHum:GetAttribute("IsDead")
+            and _G.AutoRespawn
+        do
+            Net.send("death_screen_request_respawn")
+            RunService.Heartbeat:Wait()
+        end
+        respawning = false
+    end)
+end
+
+local function watchHumanoid(hum)
+    if not hum then return end
+    currentHum = hum
+    Util.watch_attribute(hum, "IsDead", function(isDead)
+        if not _G.AutoRespawn then return end
+        if isDead then
+            tryRespawn()
+        end
+    end)
+end
+
+local function setupCharacterWatcher()
+    local p = Players.LocalPlayer
+    local function onCharAdded(char)
+        local hum = char:WaitForChild("Humanoid")
+        watchHumanoid(hum)
+    end
+    p.CharacterAdded:Connect(onCharAdded)
+    if p.Character then
+        onCharAdded(p.Character)
+    end
+end
+setupCharacterWatcher()
+
+MiscTab:Toggle({
+    Title = "Auto Respawn",
+    Icon = "check",
+    Type = "Checkbox",
+    Flag = "Respawn",
+    Desc = "Automatically presses respawn",
+    Default = false,
+    Callback = function(value)
+        _G.AutoRespawn = value
+        if not value then
+            respawning = false
+        else
+            tryRespawn()
+        end
+    end
+})
+
+MiscTab:Toggle({
+    Flag = "MeleeAura",
+    Title = "Melee Aura",
+    Desc = "Auto punch nearby players",
+    Icon = "check",
+    Type = "Checkbox",
+    Value = false,
+    Callback = function(v)
+        Flags.MeleeAura = v
+        _G.MeleeAura = v
+        if not v then StopMeleeAura() end
+    end
+})
+
+_G.BoostFPSEnabled = false
+_G.BoostFPSApplied = false
+
+local function ApplyBoostToInstance(v)
+   pcall(function()
+       if v:IsA("BasePart") then
+           v.Material = Enum.Material.SmoothPlastic
+           v.Reflectance = 0
+           v.CastShadow = false
+       elseif v:IsA("ParticleEmitter")
+           or v:IsA("Trail")
+           or v:IsA("Beam")
+           or v:IsA("Smoke")
+           or v:IsA("Fire")
+           or v:IsA("Sparkles")
+           or v:IsA("Highlight")
+       then
+           v.Enabled = false
+       elseif v:IsA("Decal") or v:IsA("Texture") then
+           v.Transparency = 1
+       elseif v:IsA("SpecialMesh") or v:IsA("MeshPart") then
+           pcall(function() v.RenderFidelity = Enum.RenderFidelity.Performance end)
+       elseif v:IsA("SurfaceAppearance") then
+           v.Parent = nil
+       elseif v:IsA("Sound") then
+           v.Volume = 0
+       end
+   end)
+end
+
+local function BoostFPS(state)
+   _G.BoostFPSEnabled = state
+   if not state then return end
+   if _G.BoostFPSApplied then return end
+   _G.BoostFPSApplied = true
+
+   pcall(function()
+       local Lighting = game:GetService("Lighting")
+       Lighting.GlobalShadows = false
+       Lighting.FogEnd = 9e9
+       Lighting.Brightness = 1
+       Lighting.Ambient = Color3.new(1, 1, 1)
+       Lighting.OutdoorAmbient = Color3.new(1, 1, 1)
+       Lighting.EnvironmentDiffuseScale = 0
+       Lighting.EnvironmentSpecularScale = 0
+       for _, v in pairs(Lighting:GetChildren()) do
+           if v:IsA("PostEffect") or v:IsA("Sky") then
+               if v:IsA("Sky") then
+                   v.Parent = nil
+               else
+                   v.Enabled = false
+               end
+           end
+       end
+   end)
+
+   pcall(function()
+       local Terrain = workspace:FindFirstChildOfClass("Terrain")
+       if Terrain then
+           Terrain.WaterWaveSize = 0
+           Terrain.WaterWaveSpeed = 0
+           Terrain.WaterReflectance = 0
+           Terrain.WaterTransparency = 1
+           Terrain.Decoration = false
+       end
+   end)
+
+   pcall(function()
+       local sg = settings()
+       sg.Rendering.QualityLevel = Enum.QualityLevel.Level01
+       sg.Rendering.EagerBulkExecution = true
+       sg.Rendering.MeshPartDetailLevel = Enum.MeshPartDetailLevel.Disabled
+   end)
+
+   pcall(function()
+       workspace.StreamingEnabled = true
+       workspace.StreamingMinRadius = 64
+       workspace.StreamingTargetRadius = 96
+   end)
+
+   pcall(function()
+       local cam = workspace.CurrentCamera
+       if cam then
+           cam.FieldOfView = 70
+       end
+   end)
+
+   pcall(function()
+       local SoundService = game:GetService("SoundService")
+       SoundService.AmbientReverb = Enum.ReverbType.NoReverb
+       SoundService.DistanceFactor = 0
+   end)
+
+   for _, v in pairs(workspace:GetDescendants()) do
+       ApplyBoostToInstance(v)
+   end
+end
+
+MiscTab:Toggle({
+   Flag = "BoostFPS",
+   Title = "Boost FPS",
+   Desc = "Reduce graphics for max performance",
+   Icon = "check",
+   Type = "Checkbox",
+   Value = false,
+   Callback = function(v)
+       BoostFPS(v)
+   end
+})
+
+MiscTab:Toggle({
+   Flag = "WhiteScreen",
+   Title = "White Screen",
+   Desc = "Disable 3D rendering for max FPS",
+   Icon = "check",
+   Type = "Checkbox",
+   Value = false,
+   Callback = function(v)
+       pcall(function()
+           game:GetService("RunService"):Set3dRenderingEnabled(not v)
+       end)
+   end
+})
+
+MiscTab:Button({
+    Title = "Claim All Quest",
+    Desc = "Unlock all quests with one click",
+    Callback = function()
+        local QuestsData
+        pcall(function()
+            QuestsData = require(ReplicatedStorage.Modules.Game.Quests.QuestsData)
+        end)
+        if not QuestsData or not QuestsData.list then return end
+        for key, _ in pairs(QuestsData.list) do
+            pcall(function()
+                return Net.get("claim_quest", key)
+            end)
+            task.wait(0.05)
+        end
+    end
+})
+
+print("[AB] Step 15: Misc tab loaded")
+
+-- ============================================================
+-- SERVER TAB UI
+-- ============================================================
+_G.visitedServers = {}
+_G.isHopping = false
+
+ServerTab:Section({ Title = "Server JobId" })
+
+ServerTab:Code({
+    Title = "Current Server",
+    Code = " " .. (game.JobId or "Unknown")
+})
+
+ServerTab:Divider()
+ServerTab:Section({ Title = "Server Information" })
+
+ServerTab:Input({
+    Title = "Teleport to JobId",
+    Placeholder = "Enter JobId...",
+    Desc = "Go to server by JobId",
+    Callback = function(jobid)
+        if jobid and jobid ~= "" then
+            TeleportService:TeleportToPlaceInstance(game.PlaceId, jobid, LocalPlayer)
+            WindUI:Notify({
+                Title = "Teleport",
+                Content = "Teleporting to JobId: " .. jobid,
+                Color = Color3.fromRGB(0, 200, 0)
+            })
+        end
+    end
+})
+
+local function GetServers()
+    local url = "https://games.roblox.com/v1/games/"..game.PlaceId.."/servers/Public?sortOrder=Asc&limit=100"
+    local servers = {}
+    local cursor
+    local attempts = 0
+    local maxAttempts = 5
+
+    repeat
+        local reqUrl = url
+        if cursor then
+            reqUrl = reqUrl .. "&cursor=" .. cursor
+        end
+
+        local success, res
+        local retries = 0
+
+        repeat
+            success, res = pcall(function()
+                return game:HttpGet(reqUrl)
+            end)
+            if not success then
+                retries += 1
+                task.wait(1)
+            end
+        until success or retries >= 3
+
+        if not success then break end
+
+        local ok, data = pcall(function()
+            return HttpService:JSONDecode(res)
+        end)
+
+        if not ok or not data or not data.data then break end
+
+        for _, s in ipairs(data.data) do
+            local hasSlot = s.playing < s.maxPlayers
+            local notEmpty = s.playing > 0
+            local notCurrent = s.id ~= game.JobId
+
+            if hasSlot and notEmpty and notCurrent then
+                table.insert(servers, s)
+            end
+        end
+
+        cursor = data.nextPageCursor
+        attempts += 1
+        task.wait(0.1)
+
+    until not cursor or attempts >= maxAttempts
+
+    return servers
+end
+
+local function DoHop(sortFunc, notifyTitle, notifyColor)
+    if _G.isHopping then
+        WindUI:Notify({
+            Title = notifyTitle,
+            Content = "Already hopping, please wait...",
+            Color = Color3.fromRGB(255, 200, 0)
+        })
+        return
+    end
+
+    _G.isHopping = true
+
+    WindUI:Notify({
+        Title = notifyTitle,
+        Content = "Fetching servers...",
+        Color = Color3.fromRGB(100, 255, 100)
+    })
+
+    task.spawn(function()
+        local servers = GetServers()
+
+        if sortFunc then
+            table.sort(servers, sortFunc)
+        end
+
+        local hopped = false
+
+        for _, s in ipairs(servers) do
+            if not _G.visitedServers[s.id] then
+                _G.visitedServers[s.id] = true
+
+                local ok, err = pcall(function()
+                    TeleportService:TeleportToPlaceInstance(game.PlaceId, s.id, LocalPlayer)
+                end)
+
+                if ok then
+                    WindUI:Notify({
+                        Title = notifyTitle,
+                        Content = "Hopping to server with " .. s.playing .. " players",
+                        Color = notifyColor
+                    })
+                    hopped = true
+                    break
+                else
+                    warn("[" .. notifyTitle .. "] Teleport failed:", err)
+                    task.wait(0.5)
+                end
+            end
+        end
+
+        if not hopped then
+            _G.visitedServers = {}
+            WindUI:Notify({
+                Title = notifyTitle,
+                Content = "No available server found. Visited list cleared.",
+                Color = Color3.fromRGB(255, 0, 0)
+            })
+        end
+
+        task.wait(3)
+        _G.isHopping = false
+    end)
+end
+
+ServerTab:Button({
+    Title = "Hop Server",
+    Desc = "Switch to server with most players",
+    Callback = function()
+        DoHop(
+            function(a, b) return a.playing > b.playing end,
+            "Hop Server",
+            Color3.fromRGB(255, 200, 0)
+        )
+    end
+})
+
+ServerTab:Button({
+    Title = "Hop Low Player Server",
+    Desc = "Switch to server with fewest players",
+    Callback = function()
+        DoHop(
+            function(a, b) return a.playing < b.playing end,
+            "Hop Low Player",
+            Color3.fromRGB(0, 200, 100)
+        )
+    end
+})
+
+ServerTab:Button({
+    Title = "Rejoin Server",
+    Desc = "Rejoin the same server",
+    Callback = function()
+        TeleportService:Teleport(game.PlaceId, LocalPlayer)
+        WindUI:Notify({
+            Title = "Rejoin Server",
+            Content = "Rejoining current server...",
+            Color = Color3.fromRGB(0, 200, 0)
+        })
+    end
+})
+
+print("[AB] Step 16: Server tab loaded")
+
+-- ============================================================
+-- ESP TAB UI
+-- ============================================================
+EspTab:Section({
+    Title = "Setting Esp",
+    Opened = true,
+    CanCollapse = false
+})
+
+EspTab:Toggle({
+    Flag = "EspATM",
+    Title = "Esp ATM",
+    Desc = "Check Status ATM",
+    Icon = "check",
+    Type = "Checkbox",
+    Value = false,
+    Callback = function(v)
+        _espAtmEnabled = v
+        if not v then ClearATMEsp() end
+    end
+})
+
+EspTab:Toggle({
+    Flag = "AutoMinigame",
+    Title = "Auto Minigame ATM",
+    Desc = "Auto-Win มินิเกม ATM (ระบบเดียวกับ Farm)",
+    Icon = "play",
+    Type = "Checkbox",
+    Value = true,
+    Callback = function(v)
+        _G.AutoMinigameEnabled = v
+    end
+})
+
+print("[AB] Step 17: ESP tab loaded")
+
+-- ============================================================
+-- AUTO FARM TAB UI
+-- ============================================================
+Default:Section({
+    Title = "Infomation",
+    Opened = true,
+    CanCollapse = false
+})
+
+local BankBalance = Default:Paragraph({
+   Title = "Bank Balance", Desc = "0", Image = "landmark", ImageSize = 20
+})
+
+local HandBalance = Default:Paragraph({
+   Title = "Hand Balance", Desc = "0", Image = "hand-coins", ImageSize = 20
+})
+
+local TotalLevelLabel = Default:Paragraph({
+   Title = "Total Level", Desc = "0", Image = "contact-round", ImageSize = 20
+})
+
+local QuantumStockLabel = Default:Paragraph({
+   Title = "Quantum Stock", Desc = "0", Image = "package", ImageSize = 20
+})
+
+task.spawn(function()
+   while task.wait(0.2) do
+       pcall(function()
+           BankBalance:SetDesc('<b><font color="#00FF00">$' .. (ATMMoney() or 0) .. "</font></b>")
+           HandBalance:SetDesc('<b><font color="#00f2ff">$' .. (HandMoney() or 0) .. "</font></b>")
+           local totalLevel = Client:GetAttribute("level") or 0
+           if totalLevel < 10 then
+               TotalLevelLabel:SetDesc('<b><font color="#FF0000">Lv. ' .. totalLevel .. '</font></b>')
+           else
+               TotalLevelLabel:SetDesc('<b><font color="#00FF00">Lv. ' .. totalLevel .. '</font></b>')
+           end
+           local qAmount = GetQuantumConsumedAmount()
+           if qAmount > 0 then
+               QuantumStockLabel:SetDesc('<b><font color="#00FF00">' .. qAmount .. ' / 500</font></b>')
+           else
+               QuantumStockLabel:SetDesc('<b><font color="#FF0000">Out of Stock</font></b>')
+           end
+       end)
+   end
+end)
+
+Default:Section({ Title = "Auto Deposit" })
+
+Default:Toggle({
+    Flag = "AutoDeposit",
+    Title = "Auto Deposit",
+    Desc = "Automatically deposits money",
+    Icon = "check",
+    Type = "Checkbox",
+    Value = false,
+    Callback = function(v) Flags.AutoDeposit = v end
+})
+
+Default:Input({
+    Flag = "DepositThreshold",
+    Title = "Deposit Threshold",
+    Desc = "Deposit this amount",
+    Value = tostring(Settings.DepositThreshold),
+    Callback = function(v)
+        local num = tonumber(v)
+        if num and num > 0 then
+            Settings.DepositThreshold = num
+        end
+    end
+})
+
+Default:Divider()
+Default:Section({ Title = "Auto Farm Jods" })
+
+Default:Toggle({
+    Flag = "AutoFarmJanitor",
+    Title = "AutoFarm Janitor",
+    Desc = "Automatically Farm Janitor",
+    Icon = "check",
+    Type = "Checkbox",
+    Value = false,
+    Callback = function(v)
+        Flags.AutoJanitor = v
+        if v then
+            Flags.AutoQuick11 = false
+            Flags.AutoSteak = false
+            Flags.AutoATM = false
+            JanitorState = "INIT"
+            SteakState = "INIT"
+        end
+    end
+})
+
+Default:Toggle({
+    Flag = "AutoFarmQuick11",
+    Title = "AutoFarm Quick 11",
+    Desc = "Automatically Farm Quick-11",
+    Icon = "check",
+    Type = "Checkbox",
+    Value = false,
+    Callback = function(v)
+        Flags.AutoQuick11 = v
+        if v then
+            Flags.AutoJanitor = false
+            Flags.AutoSteak = false
+            Flags.AutoATM = false
+            JanitorState = "INIT"
+            SteakState = "INIT"
+        end
+    end
+})
+
+Default:Toggle({
+    Flag = "AutoFarmSteak",
+    Title = "AutoFarm Steak",
+    Desc = "Automatically Farm Steak",
+    Icon = "check",
+    Type = "Checkbox",
+    Value = false,
+    Callback = function(v)
+        Flags.AutoSteak = v
+        if v then
+            Flags.AutoJanitor = false
+            Flags.AutoQuick11 = false
+            Flags.AutoATM = false
+            JanitorState = "INIT"
+            SteakState = "INIT"
+        end
+    end
+})
+
+Default:Slider({
+    Flag = "MovementSpeed",
+    Title = "Movement Farm Jods",
+    Desc = "Setup Movement rate",
+    Step = 1,
+    Value = { Min = 35, Max = 55, Default = 40 },
+    Callback = function(value) BASE_SPEED = value end
+})
+
+Default:Divider()
+Default:Section({ Title = "Farm ATM" })
+
+Default:Toggle({
+    Flag = "AutoFarmATM",
+    Title = "AutoFarm ATM",
+    Desc = "Automatically Farm ATM (with minigame + fallback)",
+    Icon = "check",
+    Type = "Checkbox",
+    Value = false,
+    Callback = function(v)
+        Flags.AutoATM = v
+        if v then
+            Flags.AutoJanitor = false
+            Flags.AutoQuick11 = false
+            Flags.AutoSteak = false
+            JanitorState = "INIT"
+            SteakState = "INIT"
+        else
+            _G.StopDriving = true
+            ATM_STATE = "IDLE"
+            if _G._steakPausedByATM then
+                Flags.AutoSteak = false
+                _G._steakPausedByATM = false
+                SteakState = "INIT"
+            end
+            task.spawn(function()
+                local vehicle = GetMyVehicle()
+                if vehicle and Humanoid and Humanoid.Sit then
+                    DismountVehicle(InstanceService, vehicle)
+                    task.wait(0.3)
+                end
+                RestorePlayer()
+                if vehicle and vehicle.PrimaryPart then
+                    RestoreVehicle(vehicle)
+                end
+            end)
+        end
+    end
+})
+
+Default:Dropdown({
+    Flag = "VehicleType",
+    Title = "Vehicle Type",
+    Desc = "Select Vehicle",
+    Values = { "Bike", "Car" },
+    Value = "Bike",
+    Callback = function(v)
+        _G.VehicleType = v
+        _drivePathCache = {}
+    end
+})
+
+Default:Dropdown({
+    Flag = "HackToolClass",
+    Title = "HackTool Type",
+    Desc = "Select HackTool",
+    Values = { "Automatic", "HackToolBasic", "HackToolPro", "HackToolUltimate", "HackToolQuantum" },
+    Value = "Automatic",
+    Callback = function(v) _G.HackToolClass = v end
+})
+
+Default:Slider({
+    Flag = "HackToolAmount",
+    Title = "HackTool Amount",
+    Desc = "Amount to buy Hacktool",
+    Step = 1,
+    Value = { Min = 1, Max = 17, Default = 3 },
+    Callback = function(value) _G.HackToolAmount = value end
+})
+
+Default:Slider({
+    Flag = "DriveSpeed",
+    Title = "MoveMent Farm ATM",
+    Desc = "Setup Movement rate",
+    Step = 1,
+    Value = { Min = 10, Max = 350, Default = 60 },
+    Callback = function(value) ATM_DRIVE_SPEED = value end
+})
+
+print("[AB] Step 18: Auto Farm tab loaded")
+
+-- ============================================================
+-- CONFIG TAB UI
+-- ============================================================
+ConfigTab:Section({ Title = "Status" })
+
+local FpsParagraph = ConfigTab:Paragraph({
+    Title = "Fps", Desc = "0", Image = "monitor", ImageSize = 20
+})
+local PingParagraph = ConfigTab:Paragraph({
+    Title = "Ping", Desc = "0", Image = "signal", ImageSize = 20
+})
+local GameTimeParagraph = ConfigTab:Paragraph({
+    Title = "Game Time", Desc = "0", Image = "timer", ImageSize = 20
+})
+
+task.spawn(function()
+    while task.wait(0.5) do
+        pcall(function()
+            FpsParagraph:SetDesc(tostring(math.floor(workspace:GetRealPhysicsFPS())))
+        end)
+    end
+end)
+
+task.spawn(function()
+    while task.wait(2) do
+        pcall(function()
+            PingParagraph:SetDesc(Stats.Network.ServerStatsItem["Data Ping"]:GetValueString())
+        end)
+    end
+end)
+
+task.spawn(function()
+    while task.wait() do
+        pcall(function()
+            local GameTime = math.floor(workspace.DistributedGameTime + 0.5)
+            local Hour = math.floor(GameTime / 60 ^ 2) % 24
+            local Minute = math.floor(GameTime / 60 ^ 1) % 60
+            local Second = math.floor(GameTime / 60 ^ 0) % 60
+            GameTimeParagraph:SetDesc(Hour .. "h " .. Minute .. "m " .. Second .. "s")
+        end)
+    end
+end)
+
+ConfigTab:Divider()
+
+local ConfigManager = Window.ConfigManager
+local AutoSaveName = "ABHUB_Farm_v2"
+
+local function SendNotify(title, content, icon)
+    if WindUI and WindUI.Notify then
+        WindUI:Notify({
+            Title = title or "Notification",
+            Content = content or "",
+            Duration = 1,
+            Icon = icon or "zap"
+        })
+    end
+end
+
+ConfigTab:Section({ Title = "Config Manager" })
+
+ConfigTab:Button({
+    Title = "Save Config",
+    Icon = "save",
+    Desc = "Save config",
+    Callback = function()
+        pcall(function()
+            local oldCfg = ConfigManager:CreateConfig(AutoSaveName)
+            oldCfg:Delete()
+            local c = ConfigManager:CreateConfig(AutoSaveName)
+            c:Save()
+            SendNotify("Config Manager", "Config Saved!", "save")
+        end)
+    end
+})
+
+ConfigTab:Button({
+    Title = "Reset Config",
+    Icon = "trash-2",
+    Desc = "Delete saved config and clear all",
+    Callback = function()
+        pcall(function()
+            local cfg = ConfigManager:CreateConfig(AutoSaveName)
+            cfg:Delete()
+            SendNotify("Config Manager", "Config Deleted", "trash-2")
+        end)
+    end
+})
+
+ConfigTab:Button({
+    Title = "Load Config",
+    Icon = "folder-open",
+    Desc = "Load saved config",
+    Callback = function()
+        pcall(function()
+            local cfg = ConfigManager:CreateConfig(AutoSaveName)
+            cfg:Load()
+            SendNotify("Config Manager", "Config Loaded!", "check")
+        end)
+    end
+})
+
+ConfigTab:Divider()
+ConfigTab:Section({ Title = "Custom Themes Ui" })
+
+local themeList = {}
+for themeName, _ in pairs(WindUI:GetThemes()) do
+    table.insert(themeList, themeName)
+end
+table.sort(themeList)
+
+ConfigTab:Dropdown({
+    Flag = "ThemeSelect",
+    Title = "Theme Select",
+    Values = themeList,
+    Value = "ABHUB_Green",
+    Desc = "Choose UI theme",
+    Callback = function(theme)
+        WindUI:SetTheme(theme)
+    end
+})
+
+ConfigTab:Slider({
+    Flag = "TransparencyValue",
+    Title = "Transparency",
+    Desc = "Set UI transparency",
+    Value = { Min = 0, Max = 1, Default = 0.2 },
+    Step = 0.1,
+    Callback = function(value)
+        WindUI.TransparencyValue = tonumber(value)
+        Window:ToggleTransparency(tonumber(value) > 0)
+    end
+})
+
+print("[AB] Step 19: Config tab loaded")
+
+-- ============================================================
+-- Final Notification
+-- ============================================================
+task.delay(1.5, function()
+    pcall(function()
+        WindUI:Notify({
+            Title = "AB HUB | FARM",
+            Content = "โหลดสำเร็จ! Auto Minigame (Farm Auto-Win)",
+            Duration = 5,
+            Icon = "check"
+        })
+    end)
+end)
+
+print("===========================================")
+print("[AB HUB | FARM] Script loaded successfully!")
+print("===========================================")
